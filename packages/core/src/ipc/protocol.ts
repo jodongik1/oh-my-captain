@@ -84,6 +84,7 @@ export interface ApprovalRequest {
   description: string
   risk: 'low' | 'medium' | 'high'
   details?: unknown
+  diff?: string
 }
 
 export interface FileContext {

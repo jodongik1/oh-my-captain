@@ -58,7 +58,8 @@ export async function runLoop(input: RunLoopInput): Promise<void> {
           rules,
           os: osName(),
           shell: defaultShell,
-          tools: toolRegistry.getToolDefinitions()
+          tools: toolRegistry.getToolDefinitions(),
+          mode: host.getMode()
         })
       },
       ...input.history,

@@ -16,9 +16,19 @@ export interface ModelInfo {
   contextWindow?: number
 }
 
+export interface ApprovalInfo {
+  requestId: string
+  action: string
+  description: string
+  risk: 'low' | 'medium' | 'high'
+  details?: unknown
+  resolved?: boolean
+  approved?: boolean
+}
+
 export interface TimelineEntry {
   id: string
-  type: 'user' | 'stream' | 'tool_start' | 'tool_result' | 'thinking' | 'error'
+  type: 'user' | 'stream' | 'tool_start' | 'tool_result' | 'thinking' | 'error' | 'approval'
   content?: string
   tool?: string
   args?: unknown
@@ -28,6 +38,7 @@ export interface TimelineEntry {
   isStreaming?: boolean
   isActive?: boolean       // 현재 진행 중 여부 (dot 애니메이션용)
   startedAt?: number       // 도구 시작 시간 (소요시간 계산용)
+  approval?: ApprovalInfo  // approval 타입 전용
 }
 
 export interface AppState {
@@ -72,6 +83,8 @@ export type AppAction =
   | { type: 'COMPLETE_TOOL'; tool: string; result: unknown }
   | { type: 'PRUNE_PREAMBLE' }
   | { type: 'SETTINGS_LOADED'; isConfigured: boolean; settings: any }
+  | { type: 'ADD_APPROVAL'; entry: TimelineEntry }
+  | { type: 'RESOLVE_APPROVAL'; requestId: string; approved: boolean }
 
 export const initialState: AppState = {
   mode: 'ask',
@@ -264,6 +277,32 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         settings: action.settings,
         currentModel: action.settings?.provider?.ollamaModel || state.currentModel
       }
+    }
+
+    case 'ADD_APPROVAL':
+      return { ...state, timeline: [...state.timeline, action.entry] }
+
+    case 'RESOLVE_APPROVAL': {
+      const aIdx = findLastIndex(
+        state.timeline,
+        e => e.type === 'approval' && e.approval?.requestId === action.requestId
+      )
+      if (aIdx >= 0) {
+        const updated = {
+          ...state.timeline[aIdx],
+          isActive: false,
+          approval: {
+            ...state.timeline[aIdx].approval!,
+            resolved: true,
+            approved: action.approved,
+          }
+        }
+        return {
+          ...state,
+          timeline: [...state.timeline.slice(0, aIdx), updated, ...state.timeline.slice(aIdx + 1)]
+        }
+      }
+      return state
     }
 
     default:

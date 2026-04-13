@@ -5,13 +5,15 @@ import ToolRow from './timeline/ToolRow'
 import ThinkingRow from './timeline/ThinkingRow'
 import ErrorRow from './timeline/ErrorRow'
 import BashRow from './timeline/BashRow'
+import ApprovalRow from './timeline/ApprovalRow'
 
 interface TimelineProps {
   entries: TimelineEntry[]
   isBusy?: boolean
+  onApprovalResponse?: (requestId: string, approved: boolean) => void
 }
 
-export default function Timeline({ entries, isBusy }: TimelineProps) {
+export default function Timeline({ entries, isBusy, onApprovalResponse }: TimelineProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -51,6 +53,12 @@ export default function Timeline({ entries, isBusy }: TimelineProps) {
             dotClass = entry.isStreaming ? 'dot-active' : 'dot-inactive'
           } else if (entry.type === 'error') {
             dotClass = 'dot-error'
+          } else if (entry.type === 'approval') {
+            if (entry.isActive) {
+              dotClass = 'dot-active'
+            } else {
+              dotClass = entry.approval?.approved ? 'dot-success' : 'dot-error'
+            }
           }
 
           return (
@@ -90,6 +98,13 @@ export default function Timeline({ entries, isBusy }: TimelineProps) {
                 )}
                 {entry.type === 'error' && (
                   <ErrorRow message={entry.content ?? ''} />
+                )}
+                {entry.type === 'approval' && entry.approval && (
+                  <ApprovalRow
+                    approval={entry.approval}
+                    diff={(entry.approval.details as any)?.diff}
+                    onRespond={(approved) => onApprovalResponse?.(entry.approval!.requestId, approved)}
+                  />
                 )}
               </div>
             </div>

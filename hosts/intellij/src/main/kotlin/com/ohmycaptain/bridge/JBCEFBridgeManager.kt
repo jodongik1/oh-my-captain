@@ -127,6 +127,18 @@ class JBCEFBridgeManager(
                 // (Core는 이미 떠있거나 큐에 있는 상태이므로 무방)
                 postToBrowser("core_ready", emptyMap<String, Any>())
             }
+            "approval_response" -> {
+                // Webview에서 온 승인 응답 → Core에 IPC 프로토콜 형식으로 전달
+                @Suppress("UNCHECKED_CAST")
+                val payload = msg["payload"] as? Map<*, *> ?: return
+                val requestId = payload["requestId"] as? String ?: return
+                val approved = payload["approved"] as? Boolean ?: false
+                sendToCore(mapOf(
+                    "id" to requestId,
+                    "type" to "approval_response",
+                    "payload" to mapOf("approved" to approved)
+                ))
+            }
             else -> {
                 // 나머지는 Core로 전달 (sendToCore에서 큐잉 또는 자동 재연결 처리)
                 sendToCore(msg)
@@ -138,7 +150,15 @@ class JBCEFBridgeManager(
     private fun handleFromCore(msg: Map<String, Any?>) {
         when (msg["type"]) {
             "context_request" -> handleContextRequest(msg)
-            "approval_request" -> handleApprovalRequest(msg)
+            "approval_request" -> {
+                // approval_request는 webview로 포워딩 (id를 payload에 포함하여 응답 상관관계 유지)
+                @Suppress("UNCHECKED_CAST")
+                val payload = (msg["payload"] as? Map<String, Any?>) ?: emptyMap()
+                val enrichedPayload = payload.toMutableMap().apply {
+                    put("id", msg["id"] ?: "")
+                }
+                postToBrowser("approval_request", enrichedPayload)
+            }
             "open_in_editor" -> handleOpenInEditor(msg)
             // 나머지는 그대로 WebView로 전달
             else -> postToBrowser(msg["type"] as String, msg["payload"] ?: emptyMap<String, Any>())

@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { writeFile, mkdir } from 'fs/promises'
+import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join, isAbsolute, dirname } from 'path'
 import { registerTool } from './registry.js'
+import { generateUnifiedDiff } from '../utils/diff.js'
 import type { HostAdapter } from '../host/interface.js'
 
 const argsSchema = z.object({
@@ -33,25 +34,25 @@ registerTool(
 
     const currentMode = host.getMode()
     if (currentMode === 'plan') {
-      // Plan mode: 제안만 표시, 실행 안 함
-      host.emit('tool_result', {
-        tool: 'write_file',
-        result: { plan: `[Plan] 파일을 수정하겠습니다: ${args.path} (${args.content.split('\n').length}줄)` }
-      })
-      const approved = await host.requestApproval({
+      // Plan mode: 실행하지 않고 계획 설명만 반환
+      return {
+        planned: true,
         action: 'write_file',
-        description: `계획 승인: ${args.path}`,
-        risk: 'medium',
-        details: { path: args.path, lineCount: args.content.split('\n').length },
-      })
-      if (!approved) return { error: '사용자가 거부했습니다.' }
+        path: args.path,
+        lineCount: args.content.split('\n').length,
+        summary: `[Plan] 파일을 수정하겠습니다: ${args.path} (${args.content.split('\n').length}줄)`,
+      }
     } else if (currentMode === 'ask') {
-      // Ask mode: diff 표시 + 승인 요청
+      // Ask mode: diff 생성 + 승인 요청
+      let originalContent = ''
+      try { originalContent = await readFile(absPath, 'utf-8') } catch { /* 새 파일 */ }
+      const diff = generateUnifiedDiff(args.path, originalContent, args.content)
+
       const approved = await host.requestApproval({
         action: 'write_file',
         description: `파일 쓰기: ${args.path} (${args.content.split('\n').length}줄)`,
         risk: 'medium',
-        details: { path: args.path, lineCount: args.content.split('\n').length },
+        details: { path: args.path, lineCount: args.content.split('\n').length, diff },
       })
       if (!approved) return { error: '사용자가 거부했습니다.' }
     }

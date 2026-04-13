@@ -122,6 +122,26 @@ export default function App() {
           dispatch({ type: 'SETTINGS_LOADED', isConfigured: !p.isFirstTime, settings: p.settings })
           break
         }
+
+        case 'approval_request': {
+          const p = msg.payload as { id: string; action: string; description: string; risk: 'low' | 'medium' | 'high'; details?: unknown }
+          const requestId = p.id
+          const entry: TimelineEntry = {
+            id: requestId,
+            type: 'approval',
+            timestamp: Date.now(),
+            isActive: true,
+            approval: {
+              requestId,
+              action: p.action,
+              description: p.description,
+              risk: p.risk,
+              details: p.details,
+            },
+          }
+          dispatch({ type: 'ADD_APPROVAL', entry })
+          break
+        }
       }
     })
   }, [dispatch])
@@ -138,6 +158,11 @@ export default function App() {
   const handleModeChange = useCallback((mode: typeof state.mode) => {
     dispatch({ type: 'SET_MODE', mode })
     sendToHost({ type: 'mode_change', payload: { mode } })
+  }, [dispatch])
+
+  const handleApprovalResponse = useCallback((requestId: string, approved: boolean) => {
+    dispatch({ type: 'RESOLVE_APPROVAL', requestId, approved })
+    sendToHost({ type: 'approval_response', payload: { requestId, approved } })
   }, [dispatch])
 
   const handleAbort = useCallback(() => {
@@ -215,7 +240,7 @@ export default function App() {
           </div>
         </div>
       ) : hasContent ? (
-        <Timeline entries={state.timeline} isBusy={state.isBusy} />
+        <Timeline entries={state.timeline} isBusy={state.isBusy} onApprovalResponse={handleApprovalResponse} />
       ) : (
         <div className="empty-state">
           <div className="empty-logo">Oh My Captain</div>

@@ -33,17 +33,17 @@ registerTool(
 
     const currentMode = host.getMode()
     if (currentMode === 'plan') {
-      host.emit('tool_result', {
-        tool: 'run_terminal',
-        result: { plan: `[Plan] 명령어를 실행하겠습니다: ${args.command}` }
-      })
-      const approved = await host.requestApproval({
-        action: 'run_terminal',
-        description: `계획 승인: ${args.command}`,
-        risk: 'high',
-        details: { command: args.command },
-      })
-      if (!approved) return { error: '사용자가 거부했습니다.' }
+      // 읽기 전용 명령어는 plan mode에서도 실행 허용 (탐색 단계에 필요)
+      const readOnlyPattern = /^\s*(ls|cat|head|tail|grep|rg|find|git\s+(status|log|diff|show|branch|remote)|wc|file|stat|echo|pwd|which|type|man)\b/
+      if (!readOnlyPattern.test(args.command)) {
+        return {
+          planned: true,
+          action: 'run_terminal',
+          command: args.command,
+          summary: `[Plan] 명령어를 실행하겠습니다: ${args.command}`,
+        }
+      }
+      // 읽기 전용 명령어는 아래로 계속 → 정상 실행
     } else if (currentMode === 'ask') {
       const approved = await host.requestApproval({
         action: 'run_terminal',
