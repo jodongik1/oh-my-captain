@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { readFile } from 'fs/promises'
 import { join, isAbsolute } from 'path'
 import { registerTool } from './registry.js'
+import { markFileRead } from './edit_file.js'
 import type { HostAdapter } from '../host/interface.js'
 
 const argsSchema = z.object({
@@ -26,6 +27,8 @@ registerTool(
         required: ['path'],
       },
     },
+    category: 'readonly',
+    concurrencySafe: true,
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
@@ -33,6 +36,9 @@ registerTool(
       ? args.path
       : join(host.getProjectRoot(), args.path)
     const content = await readFile(absPath, 'utf-8')
+
+    // edit_file의 stale-write guard에 등록
+    markFileRead(absPath, content)
 
     if (args.startLine || args.endLine) {
       const lines = content.split('\n')

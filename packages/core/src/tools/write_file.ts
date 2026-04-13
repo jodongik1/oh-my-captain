@@ -25,6 +25,8 @@ registerTool(
         required: ['path', 'content'],
       },
     },
+    category: 'write',
+    concurrencySafe: false,
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
@@ -32,37 +34,23 @@ registerTool(
       ? args.path
       : join(host.getProjectRoot(), args.path)
 
-    const currentMode = host.getMode()
-    if (currentMode === 'plan') {
-      // Plan mode: 실행하지 않고 계획 설명만 반환
-      return {
-        planned: true,
-        action: 'write_file',
-        path: args.path,
-        lineCount: args.content.split('\n').length,
-        summary: `[Plan] 파일을 수정하겠습니다: ${args.path} (${args.content.split('\n').length}줄)`,
-      }
-    } else if (currentMode === 'ask') {
-      // Ask mode: diff 생성 + 승인 요청
-      let originalContent = ''
-      try { originalContent = await readFile(absPath, 'utf-8') } catch { /* 새 파일 */ }
-      const diff = generateUnifiedDiff(args.path, originalContent, args.content)
-
-      const approved = await host.requestApproval({
-        action: 'write_file',
-        description: `파일 쓰기: ${args.path} (${args.content.split('\n').length}줄)`,
-        risk: 'medium',
-        details: { path: args.path, lineCount: args.content.split('\n').length, diff },
-      })
-      if (!approved) return { error: '사용자가 거부했습니다.' }
-    }
-    // Auto mode: 승인 없이 자동 실행
-
     // 변경 전 스냅샷 저장
     await host.triggerSafetySnapshot(absPath)
 
+    // 변경 전 내용 (diff 생성용)
+    let originalContent = ''
+    try { originalContent = await readFile(absPath, 'utf-8') } catch { /* 새 파일 */ }
+
     await mkdir(dirname(absPath), { recursive: true })
     await writeFile(absPath, args.content, 'utf-8')
-    return { path: args.path, linesWritten: args.content.split('\n').length }
+
+    const diff = generateUnifiedDiff(args.path, originalContent, args.content)
+
+    return {
+      path: args.path,
+      linesWritten: args.content.split('\n').length,
+      diff,
+      isNewFile: originalContent === '',
+    }
   }
 )

@@ -3,7 +3,7 @@ import { IpcHostAdapter } from './host/ipc_adapter.js'
 import { OllamaProvider, fetchOllamaModels, fetchOllamaModelInfo } from './providers/ollama.js'
 import { OpenAIProvider } from './providers/openai.js'
 import { AnthropicProvider } from './providers/anthropic.js'
-import { runLoop, abortLoop } from './agent/loop.js'
+import { runLoop, abortLoop, injectSteering } from './agent/loop.js'
 import { executeCodeAction } from './actions/handler.js'
 import { DEFAULT_SETTINGS } from './settings/types.js'
 import { SettingsManager } from './settings/manager.js'
@@ -75,6 +75,7 @@ function createProvider(s: CaptainSettings): LLMProvider {
 import './tools/read_file.js'
 import './tools/write_file.js'
 import './tools/run_terminal.js'
+import './tools/memory_tool.js'
 
 // ── IPC 서버 시작 ────────────────────────────────────────────
 startServer(() => {
@@ -147,6 +148,23 @@ registerHandler('mode_change', (msg) => {
   const { mode } = msg.payload as { mode: 'plan' | 'ask' | 'auto' }
   state.host?.setMode(mode)
   console.error(`[Core] Mode 변경: ${mode}`)
+})
+
+// ── 스티어링 큐 ──────────────────────────────────────────────
+
+registerHandler('steer_inject', (msg) => {
+  const { text } = msg.payload as { text: string }
+  if (state.busy) {
+    injectSteering(text)
+    console.error(`[Core] 스티어링 주입: ${text.slice(0, 80)}...`)
+  } else {
+    console.error('[Core] 스티어링 무시 (루프 미실행 중)')
+  }
+})
+
+registerHandler('steer_interrupt', () => {
+  abortLoop()
+  console.error('[Core] 스티어링 인터럽트')
 })
 
 // ── 세션 관리 ────────────────────────────────────────────────
@@ -248,11 +266,6 @@ registerHandler('model_list', async (msg) => {
 registerHandler('model_switch', async (msg) => {
   const { modelId } = msg.payload as { modelId: string }
   state.settings.provider.ollamaModel = modelId
-
-registerHandler('client_log', async (msg) => {
-  const payload = msg.payload as { level: string, message: string }
-  console.error(`[Webview] ${payload.message}`)
-})
   try {
     const info = await fetchOllamaModelInfo(
       state.settings.provider.ollamaBaseUrl, modelId, state.settings.provider.ollamaApiKey || undefined
@@ -263,6 +276,13 @@ registerHandler('client_log', async (msg) => {
   } catch (e: any) {
     send({ id: msg.id, type: 'error', payload: { message: `모델 전환 실패: ${e.message}`, retryable: false } })
   }
+})
+
+// ── 클라이언트 로그 ──────────────────────────────────────────
+
+registerHandler('client_log', async (msg) => {
+  const payload = msg.payload as { level: string; message: string }
+  console.error(`[Webview] ${payload.message}`)
 })
 
 // ── 코드 액션 ────────────────────────────────────────────────

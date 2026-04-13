@@ -29,6 +29,9 @@ export type IntellijMessage =
   | { id: string; type: 'connection_test';       payload: { baseUrl: string; apiKey?: string } }
   // ── 코드 액션 ──
   | { id: string; type: 'code_action';           payload: CodeActionPayload }
+  // ── 스티어링 큐 (실행 중 사용자 개입) ──
+  | { id: string; type: 'steer_inject';          payload: { text: string } }
+  | { id: string; type: 'steer_interrupt';       payload: Record<string, never> }
 
 export interface InitPayload {
   projectRoot: string
@@ -51,6 +54,10 @@ export type CoreMessage =
   | { id: string; type: 'open_in_editor';    payload: { path: string; line?: number } }
   | { id: string; type: 'error';             payload: { message: string; retryable: boolean } }
   | { id: string; type: 'context_usage';     payload: { usedTokens: number; maxTokens: number; percentage: number } }
+  // ── 압축 ──
+  | { id: string; type: 'compaction';        payload: { tier: number; beforeTokens: number; afterTokens: number } }
+  // ── 권한 ──
+  | { id: string; type: 'permission_denied'; payload: { tool: string; reason: string; mode: string } }
   // ── 설정 ──
   | { id: string; type: 'settings_loaded';   payload: { settings: CaptainSettings; isFirstTime: boolean } }
   | { id: string; type: 'models_list';       payload: { models: string[] } }
