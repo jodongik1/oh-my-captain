@@ -1,7 +1,7 @@
 # Oh My Captain
 
-> **Local AI coding agent for IntelliJ IDEs**  
-> Powered by Ollama, OpenAI, or Anthropic — runs entirely in your IDE.
+> **IntelliJ IDE를 위한 로컬 AI 코딩 에이전트**  
+> Ollama, OpenAI, Anthropic 연동 — IDE 안에서 모든 것이 동작합니다.
 
 ![Plugin Version](https://img.shields.io/badge/version-0.1.0-blue)
 ![IntelliJ Platform](https://img.shields.io/badge/IntelliJ-2025.1%2B-orange)
@@ -10,220 +10,224 @@
 
 ---
 
-## Overview
+## 소개
 
-Oh My Captain is an IntelliJ IDEA plugin that embeds a full-featured AI coding agent directly in your IDE. Unlike simple autocomplete or chat tools, Captain autonomously **reads files, writes code, runs terminal commands**, and explains its reasoning — all without leaving your editor.
+Oh My Captain은 IntelliJ IDEA에 완전한 AI 코딩 에이전트를 내장한 플러그인입니다.  
+단순 자동완성이나 채팅 도구와 달리, Captain은 **파일 읽기·쓰기, 터미널 명령어 실행**을 자율적으로 수행하며 각 단계의 추론 과정을 실시간으로 스트리밍합니다.
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  IntelliJ Plugin (Kotlin)                            │
-│  Tool Window · JBCef WebView · PSI Context           │
+│  IntelliJ 플러그인 (Kotlin)                           │
+│  툴 윈도우 · JBCef 웹뷰 · PSI 컨텍스트 수집          │
 └────────────────────┬─────────────────────────────────┘
                      │  Stdio IPC (NDJSON)
 ┌────────────────────▼─────────────────────────────────┐
-│  Core Agent (TypeScript / Node.js)                   │
-│  ReAct Loop · LLM Providers · Tool Registry          │
+│  코어 에이전트 (TypeScript / Node.js)                 │
+│  ReAct 루프 · LLM 프로바이더 · 도구 레지스트리        │
 └────────────────────┬─────────────────────────────────┘
-                     │  JBCef JS Bridge
+                     │  JBCef JS 브리지
 ┌────────────────────▼─────────────────────────────────┐
-│  Chat UI (React + Vite)                              │
-│  Timeline · Settings · Session History               │
+│  채팅 UI (React + Vite)                              │
+│  타임라인 · 설정 · 세션 히스토리                     │
 └──────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Features
+## 주요 기능
 
-### 🤖 Agentic Loop
-- ReAct (Reason + Act) loop — up to 20 iterations per task
-- Streams responses token-by-token in real time
-- Automatic context window management with truncation
+### 🤖 에이전트 루프
+- ReAct(Reason + Act) 방식으로 최대 20 iteration 자율 실행
+- LLM 응답을 토큰 단위로 실시간 스트리밍
+- 컨텍스트 윈도우 자동 관리 (truncation + 요약 압축)
 
-### 🛠️ Built-in Tools
-| Tool | Description |
+### 🛠️ 내장 도구
+| 도구 | 설명 |
 |---|---|
-| `read_file` | Read any file in the project |
-| `write_file` | Create or overwrite files |
-| `run_terminal` | Execute shell commands (stdout/stderr captured) |
+| `read_file` | 프로젝트 내 모든 파일 읽기 |
+| `write_file` | 파일 생성 또는 덮어쓰기 |
+| `run_terminal` | 셸 명령어 실행 (stdout/stderr 캡처) |
 
-### 🔒 Permission Modes
-| Mode | Behavior |
+### 🔒 권한 모드
+| 모드 | 동작 |
 |---|---|
-| **Ask before edits** | Approval dialog before every file write or terminal command |
-| **Edit automatically** | Executes actions without confirmation |
-| **Plan mode** | Read-only exploration, presents a plan before acting |
+| **Ask before edits** | 파일 쓰기·터미널 실행 전 매번 승인 다이얼로그 표시 |
+| **Edit automatically** | 승인 없이 자동 실행 |
+| **Plan mode** | 읽기 전용 탐색 후 실행 계획 제시 |
 
-### 🎯 Code Actions
-Right-click any code in the editor to trigger:
-- **Explain This Code** — Plain-language explanation
-- **Review This Code** — Code quality review
-- **Impact Analysis** — Upstream/downstream change analysis
-- **Query Validation** — SQL query correctness check
-- **Improve This Code** — Refactoring suggestions
-- **Generate Test** — Unit test generation
+### 🎯 코드 액션
+에디터에서 코드를 우클릭하면 다음 액션을 바로 실행할 수 있습니다:
+- **코드 설명** — 선택한 코드를 자연어로 설명
+- **코드 리뷰** — 코드 품질 및 개선점 검토
+- **변경 영향 분석** — 수정 시 영향을 받는 코드 파악
+- **쿼리 검증** — SQL 쿼리 정확성 검사
+- **코드 개선** — 리팩터링 제안
+- **테스트 생성** — 유닛 테스트 자동 작성
 
-### 🧠 LLM Providers
-- **Ollama** (local, default) — any model including `qwen`, `llama`, `codestral`
-- **OpenAI** — GPT-4o, GPT-4-turbo, and OpenAI-compatible endpoints
-- **Anthropic** — Claude 3.5 Sonnet, Claude 3 Opus (with extended thinking support)
+### 🧠 LLM 프로바이더
+- **Ollama** (로컬, 기본값) — `qwen`, `llama`, `codestral` 등 모든 모델 지원
+- **OpenAI** — GPT-4o, GPT-4-turbo 및 OpenAI 호환 엔드포인트
+- **Anthropic** — Claude 3.5 Sonnet, Claude 3 Opus (Extended Thinking 지원)
 
-### 💬 Session Management
-- Persistent chat history saved to `~/.omc/sessions.db`
-- Session list, rename, and delete from the UI
-- Auto-generated session titles based on conversation content
+### 💬 세션 관리
+- 대화 히스토리를 `~/.omc/sessions.db`에 영구 저장
+- 세션 목록 조회, 이름 변경, 삭제 기능
+- 대화 내용 기반 세션 제목 자동 생성
 
 ---
 
-## Requirements
+## 시스템 요구사항
 
-| Dependency | Version |
+| 항목 | 최소 버전 |
 |---|---|
-| IntelliJ IDEA (Community or Ultimate) | 2025.1+ |
-| Java (for Gradle build) | 17+ |
+| IntelliJ IDEA (Community 또는 Ultimate) | 2025.1+ |
+| Java (Gradle 빌드용) | 17+ |
 | Node.js | 20+ |
 | pnpm | 8+ |
 
-> **LLM Backend**: At least one of Ollama (local), OpenAI API key, or Anthropic API key is required.
+> **LLM 백엔드**: Ollama(로컬), OpenAI API 키, Anthropic API 키 중 하나 이상 필요
 
 ---
 
-## Getting Started
+## 시작하기
 
-### 1. Clone the repository
+### 1. 저장소 클론
 
 ```bash
 git clone https://github.com/your-org/oh-my-captain.git
 cd oh-my-captain
 ```
 
-### 2. Build and run
+### 2. 빌드 및 실행
 
 ```bash
-# Full build + launch IntelliJ with plugin loaded
+# 전체 빌드 + IntelliJ 실행 (기본)
 ./build-and-run.sh
 
-# Or step by step:
-./build-and-run.sh build   # Build only (Core + Webview)
-./build-and-run.sh run     # Launch IntelliJ (uses previous build)
+# 개별 실행
+./build-and-run.sh build    # 빌드만 (Core + Webview)
+./build-and-run.sh run      # IntelliJ만 실행 (이전 빌드 사용)
+./build-and-run.sh core     # Core만 빌드
+./build-and-run.sh webview  # Webview만 빌드
+./build-and-run.sh clean    # 빌드 산출물 삭제
 ```
 
-The script will:
-1. Install Node.js dependencies via `pnpm`
-2. Bundle the TypeScript core with `esbuild`
-3. Build the React webview with `Vite`
-4. Launch a sandboxed IntelliJ instance via Gradle `runIde`
+스크립트가 자동으로 수행하는 작업:
+1. `pnpm install`로 Node.js 의존성 설치
+2. `esbuild`로 TypeScript 코어 번들링
+3. `Vite`로 React 웹뷰 빌드
+4. Gradle `runIde`로 샌드박스 IntelliJ 실행
 
-### 3. Configure a provider
+### 3. 프로바이더 설정
 
-On first launch, the plugin will prompt you to configure a provider.
+최초 실행 시 프로바이더 설정 화면이 표시됩니다.
 
-**Ollama (recommended for local use)**
+**Ollama (로컬 실행 권장)**
 ```bash
-# Install Ollama
+# Ollama 설치
 brew install ollama
 
-# Pull a model
+# 모델 다운로드
 ollama pull qwen2.5-coder:7b
 
-# Start the server
+# 서버 시작
 ollama serve
 ```
 
-Then in Oh My Captain settings: set Base URL to `http://localhost:11434` and select your model.
+설정 패널에서 Base URL을 `http://localhost:11434`로 입력하고 모델을 선택하면 됩니다.
 
 ---
 
-## Project Structure
+## 프로젝트 구조
 
 ```
 oh-my-captain/
-├── build-and-run.sh              # One-shot build & launch script
-├── package.json                  # pnpm workspace root
+├── build-and-run.sh              # 빌드 & 실행 스크립트
+├── package.json                  # pnpm 워크스페이스 루트
 ├── pnpm-workspace.yaml
 │
 ├── hosts/
-│   └── intellij/                 # Kotlin IntelliJ plugin
+│   └── intellij/                 # Kotlin IntelliJ 플러그인
 │       ├── build.gradle.kts
-│       ├── gradle.properties     # Plugin version & platform config
+│       ├── gradle.properties     # 플러그인 버전 및 플랫폼 설정
 │       └── src/main/kotlin/com/ohmycaptain/
-│           ├── actions/          # Editor context menu actions
-│           ├── bridge/           # JBCef ↔ Core message bridge
-│           ├── core/             # Node.js process lifecycle
-│           ├── ipc/              # Stdio NDJSON client
-│           ├── psi/              # IntelliJ PSI context collector
-│           ├── settings/         # Plugin settings persistence
-│           └── ui/               # Tool window, approval dialog
+│           ├── actions/          # 에디터 우클릭 메뉴 액션
+│           ├── bridge/           # JBCef ↔ Core 메시지 브리지
+│           ├── core/             # Node.js 프로세스 생명주기 관리
+│           ├── ipc/              # Stdio NDJSON 클라이언트
+│           ├── psi/              # IntelliJ PSI 컨텍스트 수집
+│           ├── settings/         # 플러그인 설정 영속화
+│           └── ui/               # 툴 윈도우, 승인 다이얼로그
 │
 └── packages/
-    ├── core/                     # TypeScript agent core (Node.js)
+    ├── core/                     # TypeScript 에이전트 코어 (Node.js)
     │   └── src/
-    │       ├── main.ts           # IPC server + all message handlers
-    │       ├── agent/            # ReAct loop, context, compactor
+    │       ├── main.ts           # IPC 서버 + 전체 메시지 핸들러
+    │       ├── agent/            # ReAct 루프, 컨텍스트, 압축기
     │       ├── providers/        # Ollama, OpenAI, Anthropic
-    │       ├── tools/            # Tool registry + implementations
-    │       ├── ipc/              # Protocol types, stdio server
-    │       ├── host/             # HostAdapter interface + IPC impl
-    │       ├── settings/         # Settings types + file manager
-    │       ├── db/               # SQLite session storage
-    │       └── actions/          # Code action handlers + prompts
+    │       ├── tools/            # 도구 레지스트리 + 구현체
+    │       ├── ipc/              # 프로토콜 타입, Stdio 서버
+    │       ├── host/             # HostAdapter 인터페이스 + IPC 구현
+    │       ├── settings/         # 설정 타입 + 파일 관리자
+    │       ├── db/               # SQLite 세션 저장소
+    │       └── actions/          # 코드 액션 핸들러 + 프롬프트
     │
-    └── webview/                  # React + Vite chat UI
+    └── webview/                  # React + Vite 채팅 UI
         └── src/
-            ├── App.tsx           # Root: host message routing
-            ├── store.ts          # Global state (useReducer)
-            ├── bridge/           # JBCef postMessage bridge
+            ├── App.tsx           # 루트: 호스트 메시지 라우팅
+            ├── store.ts          # 전역 상태 (useReducer)
+            ├── bridge/           # JBCef postMessage 브리지
             └── components/
-                ├── timeline/     # StreamRow, ToolRow, BashRow, ...
-                ├── settings/     # Settings panel
-                └── ...           # Header, Input, History, Mode, ...
+                ├── timeline/     # StreamRow, ToolRow, BashRow ...
+                ├── settings/     # 설정 패널
+                └── ...           # 헤더, 입력창, 히스토리, 모드 ...
 ```
 
 ---
 
-## Development
+## 개발 가이드
 
-### Build individual packages
+### 개별 패키지 빌드
 
 ```bash
-# Core only (TypeScript → esbuild bundle)
+# Core만 빌드 (TypeScript → esbuild 번들)
 ./build-and-run.sh core
 
-# Webview only (Vite)
+# Webview만 빌드 (Vite)
 ./build-and-run.sh webview
 
-# Webview hot-reload dev server (port 5173)
+# Webview hot-reload 개발 서버 (포트 5173)
 pnpm --filter @omc/webview dev
-# Then launch IDE with: JAVA_TOOL_OPTIONS="-Domc.dev=true" ./build-and-run.sh run
+# IDE 실행 시: JAVA_TOOL_OPTIONS="-Domc.dev=true" ./build-and-run.sh run
 ```
 
-### IPC Protocol
+### IPC 프로토콜
 
-Communication between Kotlin and Node.js uses **NDJSON over stdio** (one JSON object per line).
+Kotlin과 Node.js 간 통신은 **Stdio NDJSON** 방식을 사용합니다 (한 줄 = JSON 객체 하나).
 
 ```
 IntelliJ → Core : init | user_message | abort | settings_get | ...
 Core → IntelliJ : stream_chunk | stream_end | tool_start | tool_result | error | ...
 ```
 
-See [`packages/core/src/ipc/protocol.ts`](packages/core/src/ipc/protocol.ts) for the full type definitions.
+전체 타입 정의는 [`packages/core/src/ipc/protocol.ts`](packages/core/src/ipc/protocol.ts)를 참고하세요.
 
-### Runtime data
+### 런타임 데이터
 
-User settings and session history are stored in `~/.omc/`:
+사용자 설정과 세션 히스토리는 `~/.omc/`에 저장됩니다:
 
 ```
 ~/.omc/
-├── settings.json     # Provider config, model selection
-├── sessions.db       # SQLite: conversation history
-└── logs/             # Agent stderr logs
+├── settings.json     # 프로바이더 설정, 모델 선택
+├── sessions.db       # SQLite: 대화 히스토리
+└── logs/             # 에이전트 stderr 로그
 ```
 
 ---
 
-## Configuration
+## 설정
 
-Settings are persisted to `~/.omc/settings.json` and can be edited via the in-plugin settings panel (`/settings` slash command or gear icon).
+설정은 `~/.omc/settings.json`에 저장되며, 플러그인 설정 패널(`/settings` 커맨드 또는 설정 아이콘)에서 수정할 수 있습니다.
 
 ```json
 {
@@ -243,57 +247,57 @@ Settings are persisted to `~/.omc/settings.json` and can be edited via the in-pl
 }
 ```
 
-### Project-level rules
+### 프로젝트 규칙 파일
 
-Create `.captain/rules.md` in your project root to give Captain persistent context about your project:
+프로젝트 루트에 `.captain/rules.md`를 생성하면 Captain에게 프로젝트 전용 지침을 제공할 수 있습니다:
 
 ```markdown
-# Project Rules
+# 프로젝트 규칙
 
-- Always write tests for new functions
-- Use Kotlin coroutines, not callbacks
-- Follow the existing package structure
+- 새 함수에는 반드시 테스트를 작성한다
+- 콜백 대신 Kotlin 코루틴을 사용한다
+- 기존 패키지 구조를 유지한다
 ```
 
 ---
 
-## Slash Commands
+## 슬래시 커맨드
 
-Type `/` in the input field to see available commands:
+입력창에 `/`를 입력하면 사용 가능한 커맨드 목록이 표시됩니다:
 
-| Command | Description |
+| 커맨드 | 설명 |
 |---|---|
-| `/clear` | Clear the current conversation |
-| `/new` | Start a new session |
-| `/explain` | Explain selected/open file code |
-| `/review` | Review code quality |
-| `/improve` | Suggest improvements |
-| `/test` | Generate unit tests |
-| `/model` | Switch LLM model |
-| `/settings` | Open settings panel |
+| `/clear` | 현재 대화 초기화 |
+| `/new` | 새 세션 시작 |
+| `/explain` | 열린 파일 코드 설명 |
+| `/review` | 코드 품질 리뷰 |
+| `/improve` | 코드 개선 제안 |
+| `/test` | 유닛 테스트 생성 |
+| `/model` | LLM 모델 전환 |
+| `/settings` | 설정 패널 열기 |
 
 ---
 
-## Roadmap
+## 로드맵
 
-- [ ] **@-mention file references** — `@src/Main.kt` to explicitly include files in context
-- [ ] **Native diff viewer** — Review file changes with Accept/Reject in IntelliJ's built-in diff UI
-- [ ] **Plan Mode improvements** — True read-only exploration with one-click plan execution
-- [ ] **/compact command** — Manual context compression to free up token space
-- [ ] **Git workflow** — `/commit` and `/pr` automation
-- [ ] **Image input** — Paste screenshots for UI analysis
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/my-feature`
-3. Make your changes and test with `./build-and-run.sh`
-4. Open a Pull Request
+- [ ] **@-mention 파일 참조** — `@src/Main.kt` 입력으로 특정 파일을 컨텍스트에 명시적 포함
+- [ ] **Native Diff Viewer** — IntelliJ 내장 Diff UI로 파일 변경 사항 Accept/Reject
+- [ ] **Plan Mode 개선** — 진정한 읽기 전용 탐색 + 원클릭 계획 실행
+- [ ] **/compact 커맨드** — 수동 컨텍스트 압축으로 토큰 공간 확보
+- [ ] **Git 워크플로우** — `/commit`, `/pr` 자동화
+- [ ] **이미지 입력** — 스크린샷 붙여넣기로 UI 분석
 
 ---
 
-## License
+## 기여하기
+
+1. 저장소를 Fork합니다
+2. 기능 브랜치를 생성합니다: `git checkout -b feat/my-feature`
+3. 변경 후 `./build-and-run.sh`로 테스트합니다
+4. Pull Request를 오픈합니다
+
+---
+
+## 라이선스
 
 MIT © Oh My Captain Contributors
