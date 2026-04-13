@@ -1,0 +1,64 @@
+# ── Node.js ──────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ── Build outputs ─────────────────────────────────────────────────
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# ── Oh My Captain — 빌드 리소스 (Gradle이 복사하는 번들) ──────────
+hosts/intellij/src/main/resources/webview/
+hosts/intellij/src/main/resources/core/
+
+# ── Oh My Captain — 런타임 데이터 (사용자별, 커밋 불필요) ─────────
+.captain/
+.omc/
+
+# ── Gradle ────────────────────────────────────────────────────────
+.gradle/
+hosts/intellij/.gradle/
+hosts/intellij/.kotlin/
+hosts/intellij/.intellijPlatform/
+hosts/intellij/build/
+hosts/intellij/gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# ── IntelliJ IDEA / JetBrains ────────────────────────────────────
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# ── Kotlin / Java ─────────────────────────────────────────────────
+*.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# ── macOS ─────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ── 환경/시크릿 ───────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.local.json
+.claude/settings.local.json
+
+# ── 에디터 ────────────────────────────────────────────────────────
+.vscode/
+*.swp
+*.swo
+*~
+
+# ── 로그 ──────────────────────────────────────────────────────────
+logs/
+*.log

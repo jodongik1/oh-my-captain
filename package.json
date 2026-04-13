@@ -1,0 +1,10 @@
+{
+  "name": "oh-my-captain",
+  "private": true,
+  "scripts": {
+    "build:core": "pnpm --filter @omc/core build",
+    "build:webview": "pnpm --filter @omc/webview build",
+    "dev:webview": "pnpm --filter @omc/webview dev",
+    "build:all": "pnpm run build:core && pnpm run build:webview"
+  }
+}

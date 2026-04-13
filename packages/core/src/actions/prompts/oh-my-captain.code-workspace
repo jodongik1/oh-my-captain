@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../../../../.."
+		},
+		{
+			"path": "../../../../../../opensw/cline"
+		}
+	],
+	"settings": {
+		"typescript.tsc.autoDetect": "off",
+		"remote.autoForwardPorts": false
+	}
+}
