@@ -87,8 +87,8 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
 
   if (isCompact) {
     const label = tool === 'read_file'
-      ? (isActive ? 'Reading' : 'Read')
-      : (isActive ? 'Listing' : 'Listed')
+      ? (isActive ? '읽는 중' : '읽음')
+      : (isActive ? '목록 조회 중' : '목록 조회')
     
     const target = tool === 'read_file'
       ? getBasename()
@@ -100,7 +100,7 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
         <span
           className="tool-compact-file"
           onClick={handleClick}
-          title={getResource() ? 'Click to open in Editor' : ''}
+          title={getResource() ? '클릭하여 에디터에서 열기' : ''}
         >
           {target}
         </span>
@@ -112,9 +112,9 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
   // ── IN Content rendering ──
   const renderInContent = () => {
     if (tool === 'replace_file_content' || tool === 'multi_replace_file_content') {
-      return <span>Editing <strong>{getBasename()}</strong></span>
+      return <span><strong>{getBasename()}</strong> 편집 중</span>
     } else if (tool === 'write_to_file') {
-      return <span>Writing to <strong>{getBasename()}</strong></span>
+      return <span><strong>{getBasename()}</strong>에 쓰는 중</span>
     } else if (tool === 'agent') {
       const a = args as Record<string, unknown>
       return <span>{(a?.task || a?.TaskName || a?.prompt || 'Sub-agent task') as string}</span>
@@ -147,7 +147,7 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
              e.stopPropagation()
              handleClick()
           }}
-          title={getResource() ? "Click to open in Editor" : ""}
+          title={getResource() ? "클릭하여 에디터에서 열기" : ""}
         >
           {getDetails()}
           {getResource() && <ExternalLink size={10} style={{ marginLeft: '4px', display: 'inline-block' }} />}
@@ -165,7 +165,7 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
             <div className="in-out-label">OUT</div>
             <div className={`in-out-content output-text ${!expanded ? 'collapsed' : 'expanded'}`}>
               {!expanded ? (
-                <span className="tap-to-expand">Output collapsed. Click to expand.</span>
+                <span className="tap-to-expand">출력이 접혀 있습니다. 클릭하여 펼치세요.</span>
               ) : (
                 renderOutContent()
               )}
@@ -176,7 +176,7 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
           <div className="in-out-row">
             <div className="in-out-label">OUT</div>
             <div className="in-out-content">
-              <span className="status-label active">Processing<span className="status-dots" /></span>
+              <span className="status-label active">처리 중<span className="status-dots" /></span>
             </div>
           </div>
         )}

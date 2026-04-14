@@ -4,7 +4,7 @@ import { mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { nanoid } from 'nanoid'
 
-const DB_DIR = join(homedir(), '.omc')
+const DB_DIR = join(homedir(), '.oh-my-captain')
 const DB_PATH = join(DB_DIR, 'sessions.db')
 
 let db: Database.Database | null = null

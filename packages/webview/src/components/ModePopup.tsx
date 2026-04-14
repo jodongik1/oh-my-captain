@@ -12,20 +12,20 @@ const MODES: { mode: Mode; icon: React.ReactNode; name: string; desc: string }[]
   {
     mode: 'ask',
     icon: <FileText size={16} />,
-    name: 'Ask before edits',
-    desc: 'Captain will ask for approval before making each edit',
+    name: '편집 전 확인',
+    desc: '각 편집 전 Captain이 승인을 요청합니다',
   },
   {
     mode: 'auto',
     icon: <Code size={16} />,
-    name: 'Edit automatically',
-    desc: 'Captain will edit your selected text or the whole file',
+    name: '자동 편집',
+    desc: '선택한 텍스트 또는 전체 파일을 Captain이 자동으로 편집합니다',
   },
   {
     mode: 'plan',
     icon: <ClipboardList size={16} />,
-    name: 'Plan mode',
-    desc: 'Captain will explore the code and present a plan before editing',
+    name: '플랜 모드',
+    desc: '편집 전 코드를 탐색하고 계획을 먼저 제시합니다',
   },
 ]
 
@@ -44,9 +44,9 @@ export default function ModePopup({ currentMode, onSelect, onClose }: ModePopupP
       <div className="mode-popup-overlay" onClick={onClose} />
       <div className="mode-popup">
         <div className="mode-popup-header">
-          <span className="mode-popup-title">Modes</span>
+          <span className="mode-popup-title">모드</span>
           <span className="mode-popup-hint">
-            <kbd>⇧</kbd> + <kbd>tab</kbd> to switch
+            <kbd>⇧</kbd> + <kbd>tab</kbd> 으로 전환
           </span>
         </div>
         <div className="mode-popup-list">

@@ -102,7 +102,7 @@ intellijPlatform {
 tasks.withType<org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask> {
     val homeDir = System.getProperty("user.home")
     val today = LocalDate.now().toString()
-    val logDir = File("$homeDir/.omc/logs/$today")
+    val logDir = File("$homeDir/.oh-my-captain/logs/$today")
     if (!logDir.exists()) {
         logDir.mkdirs()
     }

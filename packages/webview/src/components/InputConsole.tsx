@@ -26,9 +26,9 @@ interface InputConsoleProps {
 }
 
 const MODE_LABELS: Record<Mode, string> = {
-  plan: 'Plan mode',
-  ask: 'Ask before edits',
-  auto: 'Edit automatically',
+  plan: '플랜 모드',
+  ask: '편집 전 확인',
+  auto: '자동 편집',
 }
 
 const MODES: Mode[] = ['ask', 'auto', 'plan']
@@ -93,28 +93,28 @@ export default function InputConsole({
 
   const buildCommands = (): SlashCommand[] => [
     {
-      name: '/clear', label: 'Clear conversation', category: 'Context',
+      name: '/clear', label: '대화 초기화', category: '컨텍스트',
       action: () => { onClearContext(); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
     },
     {
-      name: '/explain', label: 'Explain code...', category: 'Context',
+      name: '/explain', label: '코드 설명...', category: '컨텍스트',
       action: () => { onSend('/explain'); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
     },
     {
-      name: '/review', label: 'Review code...', category: 'Context',
+      name: '/review', label: '코드 리뷰...', category: '컨텍스트',
       action: () => { onSend('/review'); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
     },
     {
-      name: '/improve', label: 'Improve code...', category: 'Context',
+      name: '/improve', label: '코드 개선...', category: '컨텍스트',
       action: () => { onSend('/improve'); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
     },
     {
-      name: '/test', label: 'Generate test...', category: 'Context',
+      name: '/test', label: '테스트 생성...', category: '컨텍스트',
       action: () => { onSend('/test'); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
     },
     {
-      name: '/model', label: 'Switch model...', category: 'Model',
-      description: currentModel ? `Current: ${currentModel}` : 'Default (recommended)',
+      name: '/model', label: '모델 변경...', category: '모델',
+      description: currentModel ? `현재: ${currentModel}` : '기본값 (권장)',
       action: () => {
         onToggleModelSelector()
         onSlashFilterChange(null)
@@ -124,11 +124,11 @@ export default function InputConsole({
       }
     },
     {
-      name: '/new', label: 'New session...', category: 'Customize',
+      name: '/new', label: '새 대화...', category: '사용자 설정',
       action: () => { onNewSession(); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
     },
     {
-      name: '/settings', label: 'Settings', category: 'Customize',
+      name: '/settings', label: '설정', category: '사용자 설정',
       action: () => { onOpenSettings(); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
     },
   ]
@@ -141,13 +141,13 @@ export default function InputConsole({
             <div className="slash-popup-overlay" onClick={() => setShowAddContext(false)} />
             <div className="add-context-popup">
               <div className="add-context-item">
-                <Upload size={14}/> <span>Upload from computer</span>
+                <Upload size={14}/> <span>파일 업로드</span>
               </div>
               <div className="add-context-item">
-                <FileText size={14}/> <span>Add context</span>
+                <FileText size={14}/> <span>컨텍스트 추가</span>
               </div>
               <div className="add-context-item">
-                <Globe size={14}/> <span>Browse the web</span>
+                <Globe size={14}/> <span>웹 검색</span>
               </div>
             </div>
           </>
@@ -175,7 +175,7 @@ export default function InputConsole({
         <textarea
           ref={textareaRef}
           className="input-field"
-          placeholder={isBusy ? 'Captain is working...' : '⌘ Esc to focus or unfocus Captain'}
+          placeholder={isBusy ? 'Captain이 작업 중입니다...' : '⌘ Esc로 Captain에 포커스하거나 해제하세요'}
           value={text}
           disabled={isBusy}
           onChange={handleChange}
@@ -193,10 +193,10 @@ export default function InputConsole({
 
         <div className="input-footer">
           <div className="footer-left">
-            <button className={`${showAddContext ? 'active' : ''} footer-icon-btn`} onClick={() => setShowAddContext(!showAddContext)} title="Add context">
+            <button className={`${showAddContext ? 'active' : ''} footer-icon-btn`} onClick={() => setShowAddContext(!showAddContext)} title="컨텍스트 추가">
               <Plus size={16} />
             </button>
-            <button className={`${showActionMenu ? 'active' : ''} footer-icon-btn`} onClick={() => setShowActionMenu(!showActionMenu)} title="Commands">
+            <button className={`${showActionMenu ? 'active' : ''} footer-icon-btn`} onClick={() => setShowActionMenu(!showActionMenu)} title="명령어">
               <SquareSlash size={16} />
             </button>
           </div>
@@ -215,7 +215,7 @@ export default function InputConsole({
             <button
               className={`mode-switch-btn mode-${mode}`}
               onClick={() => setShowModePopup(!showModePopup)}
-              title="Click to switch mode (Shift+Tab)"
+              title="모드 전환 (Shift+Tab)"
             >
               <ModeIcon mode={mode} />
               <span>{MODE_LABELS[mode]}</span>
@@ -232,7 +232,7 @@ export default function InputConsole({
                 onClick={() => {
                   if (text.trim()) { onSend(text.trim()); setText('') }
                 }}
-                title="Send (Enter)"
+                title="전송 (Enter)"
               >
                 <ArrowUp size={16} strokeWidth={2.5} />
               </button>

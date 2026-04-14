@@ -10,7 +10,7 @@ interface ModelSelectorPopupProps {
 export default function ModelSelectorPopup({ models, currentModelId, onSelect, onClose }: ModelSelectorPopupProps) {
   return (
     <div className="model-popup">
-      <div className="slash-category">Select a model</div>
+      <div className="slash-category">모델 선택</div>
       {models.length === 0 && (
         <div style={{ padding: '12px', color: 'var(--fg-muted)', fontSize: 12 }}>
           모델 목록을 불러오는 중...
@@ -27,7 +27,7 @@ export default function ModelSelectorPopup({ models, currentModelId, onSelect, o
           </div>
           {model.contextWindow && (
             <div className="model-item-info">
-              context: {model.contextWindow.toLocaleString()} tokens
+              컨텍스트: {model.contextWindow.toLocaleString()} 토큰
             </div>
           )}
         </div>

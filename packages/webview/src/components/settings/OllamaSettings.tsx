@@ -78,7 +78,7 @@ export default function OllamaSettings({
             setConnStatus('idle')
           }}
         />
-        Use custom base URL
+        커스텀 Base URL 사용
       </label>
 
       {useCustomUrl && (
@@ -98,17 +98,17 @@ export default function OllamaSettings({
 
       {/* API Key */}
       <div className="settings-group">
-        <div className="settings-label">API Key</div>
+        <div className="settings-label">API 키</div>
         <div className="settings-row">
           <input
             className="settings-input"
             type={showKey ? 'text' : 'password'}
             value={apiKey}
-            placeholder="Leave empty for local installation"
+            placeholder="로컬 설치의 경우 비워두세요"
             onChange={e => onChange({ ollamaApiKey: e.target.value })}
           />
           <button className="settings-btn" onClick={() => setShowKey(!showKey)}>
-            {showKey ? 'Hide' : 'Show'}
+            {showKey ? '숨기기' : '표시'}
           </button>
         </div>
       </div>
@@ -120,15 +120,15 @@ export default function OllamaSettings({
           onClick={testConnection}
           disabled={connStatus === 'testing'}
         >
-          {connStatus === 'testing' ? 'Testing...' : '🔌 Test Connection'}
+          {connStatus === 'testing' ? '연결 중...' : '🔌 연결 테스트'}
         </button>
-        {connStatus === 'ok' && <span className="connection-status success">✓ Connected ({models.length} models)</span>}
+        {connStatus === 'ok' && <span className="connection-status success">✓ 연결됨 ({models.length}개 모델)</span>}
         {connStatus === 'error' && <span className="connection-status error">✗ {connError}</span>}
       </div>
 
       {/* Model */}
       <div className="settings-group">
-        <div className="settings-label">Model</div>
+        <div className="settings-label">모델</div>
         {models.length > 0 ? (
           <select
             className="settings-select"
@@ -153,7 +153,7 @@ export default function OllamaSettings({
           />
         )}
         {models.length === 0 && (
-          <div className="settings-hint">Run Test Connection to load available models.</div>
+          <div className="settings-hint">연결 테스트를 실행하면 사용 가능한 모델 목록이 표시됩니다.</div>
         )}
       </div>
     </div>

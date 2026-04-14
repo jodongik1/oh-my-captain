@@ -15,9 +15,9 @@ const RISK_COLORS: Record<string, string> = {
 }
 
 const RISK_LABELS: Record<string, string> = {
-  high: 'High Risk',
-  medium: 'Medium Risk',
-  low: 'Low Risk',
+  high: '위험',
+  medium: '주의',
+  low: '안전',
 }
 
 export default function ApprovalRow({ approval, onRespond, diff }: ApprovalRowProps) {
@@ -34,7 +34,7 @@ export default function ApprovalRow({ approval, onRespond, diff }: ApprovalRowPr
           }
           <span className="approval-action">{approval.action}</span>
           <span className="approval-status">
-            {approval.approved ? 'Approved' : 'Rejected'}
+            {approval.approved ? '승인됨' : '거부됨'}
           </span>
         </div>
       </div>
@@ -55,10 +55,10 @@ export default function ApprovalRow({ approval, onRespond, diff }: ApprovalRowPr
       {diff && <DiffView diff={diff} />}
       <div className="approval-actions">
         <button className="approval-btn approve" onClick={() => onRespond(true)}>
-          Accept
+          승인
         </button>
         <button className="approval-btn reject" onClick={() => onRespond(false)}>
-          Reject
+          거부
         </button>
       </div>
     </div>

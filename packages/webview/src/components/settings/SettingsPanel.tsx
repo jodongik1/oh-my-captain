@@ -91,7 +91,7 @@ function ApiKeyField({
         onChange={e => onChange(e.target.value)}
       />
       <button className="settings-btn" onClick={() => setShowKey(!showKey)}>
-        {showKey ? 'Hide' : 'Show'}
+        {showKey ? '숨기기' : '표시'}
       </button>
     </div>
   )
@@ -150,24 +150,24 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
     <div className="settings-panel">
       <div className="settings-header">
         <button className="icon-btn" onClick={handleClose}>←</button>
-        <span>Settings</span>
+        <span>설정</span>
         <div className="settings-header-actions">
           {dirty && (
-            <button className="settings-btn cancel-btn" onClick={handleCancel}>Cancel</button>
+            <button className="settings-btn cancel-btn" onClick={handleCancel}>취소</button>
           )}
           <button
             className={`settings-btn save-btn ${dirty ? 'active' : ''} ${saveStatus === 'saved' ? 'saved' : ''}`}
             onClick={handleSave}
             disabled={!dirty}
           >
-            {saveStatus === 'saved' ? '✓ Saved' : 'Save'}
+            {saveStatus === 'saved' ? '✓ 저장됨' : '저장'}
           </button>
         </div>
       </div>
       <div className="settings-content">
         {/* ── Provider 선택 ── */}
         <div className="settings-group">
-          <div className="settings-label">API Provider</div>
+          <div className="settings-label">AI 제공자</div>
           <select
             className="settings-select"
             value={settings.provider}
@@ -192,7 +192,7 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
         {settings.provider === 'openai' && (
           <>
             <div className="settings-group">
-              <div className="settings-label">API Key</div>
+              <div className="settings-label">API 키</div>
               <ApiKeyField
                 value={settings.openAiApiKey}
                 placeholder="sk-..."
@@ -200,7 +200,7 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
               />
             </div>
             <div className="settings-group">
-              <div className="settings-label">Model</div>
+              <div className="settings-label">모델</div>
               <input
                 className="settings-input"
                 value={settings.openAiModel}
@@ -221,7 +221,7 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
         {settings.provider === 'anthropic' && (
           <>
             <div className="settings-group">
-              <div className="settings-label">API Key</div>
+              <div className="settings-label">API 키</div>
               <ApiKeyField
                 value={settings.anthropicApiKey}
                 placeholder="sk-ant-..."
@@ -229,7 +229,7 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
               />
             </div>
             <div className="settings-group">
-              <div className="settings-label">Model</div>
+              <div className="settings-label">모델</div>
               <input
                 className="settings-input"
                 value={settings.anthropicModel}
@@ -243,7 +243,7 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
         <div className="settings-divider" />
 
         <div className="settings-group">
-          <div className="settings-label">Context Window</div>
+          <div className="settings-label">컨텍스트 윈도우</div>
           <input
             className="settings-input"
             type="number"
@@ -254,11 +254,11 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
               contextWindow: clampNumber(Number(e.target.value), 1024, 2097152)
             })}
           />
-          <div className="settings-hint">Token limit for model context. Auto-detected when selecting Ollama models.</div>
+          <div className="settings-hint">모델 컨텍스트 토큰 한도. Ollama 모델 선택 시 자동 감지됩니다.</div>
         </div>
 
         <div className="settings-group">
-          <div className="settings-label">Request Timeout (ms)</div>
+          <div className="settings-label">요청 타임아웃 (ms)</div>
           <input
             className="settings-input"
             type="number"
@@ -269,7 +269,7 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
               requestTimeoutMs: clampNumber(Number(e.target.value), 5000, 600000)
             })}
           />
-          <div className="settings-hint">Maximum wait time per request. Increase for larger models.</div>
+          <div className="settings-hint">요청당 최대 대기 시간. 대용량 모델은 값을 높게 설정하세요.</div>
         </div>
       </div>
     </div>

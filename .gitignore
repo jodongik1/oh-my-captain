@@ -18,7 +18,7 @@ hosts/intellij/src/main/resources/core/
 
 # ── Oh My Captain — 런타임 데이터 (사용자별, 커밋 불필요) ─────────
 .captain/
-.omc/
+.oh-my-captain/
 
 # ── Gradle ────────────────────────────────────────────────────────
 .gradle/
@@ -55,6 +55,7 @@ local.properties
 
 # ── 에디터 ────────────────────────────────────────────────────────
 .vscode/
+*.code-workspace
 *.swp
 *.swo
 *~

@@ -18,11 +18,11 @@ export default function ThinkingRow({ durationMs, content, isActive }: ThinkingR
       >
         {isActive ? (
           <span className="thinking-label active">
-            Thinking<span className="status-dots" />
+            생각 중<span className="status-dots" />
           </span>
         ) : (
           <>
-            <span className="thinking-label">Thought for {seconds}s</span>
+            <span className="thinking-label">{seconds}초 동안 생각함</span>
             <span className="thinking-toggle">{expanded ? '▾' : '>'}</span>
           </>
         )}

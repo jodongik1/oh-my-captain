@@ -63,17 +63,17 @@ export default function HeaderBar({
               {isBusy && <span className="busy-indicator" />}
               {sessionTitle}
             </span>
-            <button className="header-edit-btn" onClick={handleStartEdit} title="Rename">
+            <button className="header-edit-btn" onClick={handleStartEdit} title="이름 변경">
               <Pencil size={12} />
             </button>
           </>
         )}
       </div>
       <div className="header-actions">
-        <button className="icon-btn" onClick={onHistoryToggle} title="History">
+        <button className="icon-btn" onClick={onHistoryToggle} title="대화 기록">
           <Clock size={16} />
         </button>
-        <button className="icon-btn" onClick={onNewSession} title="New session">
+        <button className="icon-btn" onClick={onNewSession} title="새 대화">
           <PlusCircle size={16} />
         </button>
       </div>

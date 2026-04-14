@@ -81,7 +81,7 @@ export default function SlashCommandPopup({ commands, filter, showFilterInput, o
             <input
               ref={inputRef}
               type="text"
-              placeholder="Filter actions..."
+              placeholder="명령어 검색..."
               value={localFilter}
               onChange={e => setLocalFilter(e.target.value)}
             />

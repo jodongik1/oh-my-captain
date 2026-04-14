@@ -11,7 +11,7 @@ export interface LoadSettingsResult {
 export class SettingsManager {
   private static getFilePath(): string {
     const home = os.homedir()
-    return path.join(home, '.omc', 'settings.json')
+    return path.join(home, '.oh-my-captain', 'settings.json')
   }
 
   static load(): LoadSettingsResult {
