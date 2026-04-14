@@ -14,10 +14,16 @@ export default function App() {
 
   // Core → React 메시지 수신
   useEffect(() => {
+    let currentSource: 'chat' | 'action' = 'chat'
+
     return onHostMessage((msg) => {
       switch (msg.type) {
+        case 'stream_start':
+          currentSource = (msg.payload as { source: 'chat' | 'action' }).source
+          break
+
         case 'stream_chunk':
-          dispatch({ type: 'STREAM_TOKEN', token: (msg.payload as { token: string }).token })
+          dispatch({ type: 'STREAM_TOKEN', token: (msg.payload as { token: string }).token, source: currentSource })
           break
 
         case 'stream_end':
@@ -172,6 +178,7 @@ export default function App() {
 
   const handleNewSession = useCallback(() => {
     dispatch({ type: 'NEW_SESSION' })
+    sendToHost({ type: 'session_new', payload: {} })
     sendToHost({ type: 'session_list', payload: {} })
   }, [dispatch])
 
@@ -272,7 +279,10 @@ export default function App() {
           onToggleModelSelector={() => dispatch({ type: 'TOGGLE_MODEL_SELECTOR' })}
           onModelSelect={handleModelSelect}
           onNewSession={handleNewSession}
-          onClearContext={() => dispatch({ type: 'NEW_SESSION' })}
+          onClearContext={() => {
+            dispatch({ type: 'NEW_SESSION' })
+            sendToHost({ type: 'session_new', payload: {} })
+          }}
           onOpenSettings={() => dispatch({ type: 'TOGGLE_SETTINGS' })}
         />
       )}

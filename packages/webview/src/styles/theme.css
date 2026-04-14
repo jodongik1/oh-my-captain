@@ -1181,13 +1181,25 @@ textarea.input-field:disabled {
 .history-item:hover { background: var(--bg-hover); }
 .history-item.active { background: rgba(59, 130, 246, 0.12); }
 
-.history-item-title {
+.history-item-info {
   flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.history-item-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
   color: var(--fg-primary);
+}
+
+.history-item-date {
+  font-size: 11px;
+  color: var(--fg-muted);
 }
 
 .history-item-title-editing {

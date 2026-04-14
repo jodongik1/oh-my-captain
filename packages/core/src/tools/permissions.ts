@@ -20,7 +20,7 @@ export type PermissionDecision = 'allow' | 'deny' | 'prompt'
  */
 const MODE_POLICY: Record<string, Record<ToolCategory, PermissionDecision>> = {
   plan:  { readonly: 'allow', write: 'deny',   destructive: 'deny' },
-  ask:   { readonly: 'allow', write: 'prompt', destructive: 'prompt' },
+  ask:   { readonly: 'allow', write: 'allow',  destructive: 'allow' },
   auto:  { readonly: 'allow', write: 'allow',  destructive: 'allow' },
 }
 
@@ -32,6 +32,16 @@ const READ_ONLY_COMMAND_PATTERN = /^\s*(ls|cat|head|tail|grep|rg|find|git\s+(sta
 
 export function isReadOnlyCommand(command: string): boolean {
   return READ_ONLY_COMMAND_PATTERN.test(command)
+}
+
+/**
+ * 파괴적(destructive) 셸 명령 패턴.
+ * rm, rmdir, git push --force, git reset --hard 등 되돌리기 어려운 명령.
+ */
+const DESTRUCTIVE_COMMAND_PATTERN = /^\s*(rm\b|rmdir\b|git\s+push\s+.*--force|git\s+push\s+-f\b|git\s+reset\s+--hard|git\s+clean\s+-f|git\s+checkout\s+--\s|git\s+branch\s+-D\b)/
+
+export function isDestructiveCommand(command: string): boolean {
+  return DESTRUCTIVE_COMMAND_PATTERN.test(command)
 }
 
 /**
@@ -59,6 +69,15 @@ export function resolvePermission(
     if (isReadOnlyCommand(command)) {
       return 'allow'
     }
+  }
+
+  // Ask 모드에서 run_terminal의 파괴적 명령(rm 등)만 승인 요청
+  if (mode === 'ask' && toolName === 'run_terminal') {
+    const command = (args.command as string) || ''
+    if (isDestructiveCommand(command)) {
+      return 'prompt'
+    }
+    return 'allow'
   }
 
   // ── Step 3: 모드별 정책 ──

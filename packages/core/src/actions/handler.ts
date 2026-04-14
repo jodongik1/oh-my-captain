@@ -3,6 +3,7 @@ import { join, dirname } from 'path'
 import type { CodeActionPayload, CodeActionType } from '../ipc/protocol.js'
 import type { LLMProvider } from '../providers/types.js'
 import type { HostAdapter } from '../host/interface.js'
+import { logger } from '../utils/logger.js'
 
 // CJS 번들에서는 __dirname이 자동 제공됨. ESM fallback 불필요.
 // (esbuild format: 'cjs' → __dirname 사용 가능)
@@ -61,39 +62,59 @@ export async function executeCodeAction(
   const template = await loadPromptTemplate(payload.action, host.getProjectRoot())
   const prompt = renderTemplate(template, payload, host.getProjectRoot())
 
+  const promptChars = prompt.length
+  const approxPromptTokens = Math.ceil(promptChars / 4)
+  logger.info({ action: payload.action, filePath: payload.filePath, lineRange: payload.lineRange, promptChars, approxPromptTokens }, '[Action] 스트림 시작')
+
+  host.emit('stream_start', { source: 'action' })
   host.emit('stream_chunk', { token: '' })
 
-  const response = await provider.stream(
-    [
-      {
-        role: 'system',
-        content: 'You are a code analysis assistant. Follow the response format specified in the prompt exactly. Respond in Korean unless the code comments are in another language.'
-      },
-      { role: 'user', content: prompt }
-    ],
-    [],  // 도구 없음 (분석만)
-    (chunk) => {
-      if (chunk.token) host.emit('stream_chunk', { token: chunk.token })
+  let chunkCount = 0
+  let responseChars = 0
+
+  try {
+    const response = await provider.stream(
+      [
+        {
+          role: 'system',
+          content: 'You are a code analysis assistant. Follow the response format specified in the prompt exactly. Respond in Korean unless the code comments are in another language.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      [],  // 도구 없음 (분석만)
+      (chunk) => {
+        if (chunk.token) {
+          chunkCount++
+          responseChars += chunk.token.length
+          host.emit('stream_chunk', { token: chunk.token })
+        }
+      }
+    )
+
+    logger.info({ action: payload.action, chunkCount, responseChars, approxResponseTokens: Math.ceil(responseChars / 4) }, '[Action] 스트림 완료')
+
+    // improve 액션의 경우 응답에서 코드 블록을 추출하여 diff 표시
+    if (payload.action === 'improve' && response.content) {
+      const improved = extractCodeFromResponse(response.content)
+      if (improved && improved !== payload.code) {
+        host.emit('tool_result', {
+          tool: 'edit_file',
+          result: {
+            path: payload.filePath,
+            before: payload.code,
+            after: improved,
+            action: 'improve'
+          }
+        })
+      }
     }
-  )
+  } catch (e: any) {
+    const isTimeout = e?.code === 'TIMEOUT'
+    logger.error({ action: payload.action, error: e?.message, isTimeout }, '[Action] 스트림 오류')
+    host.emit('stream_chunk', { token: `\n\n---\n⚠️ **${e?.message ?? '알 수 없는 오류가 발생했습니다.'}**` })
+  }
 
   host.emit('stream_end', {})
-
-  // improve 액션의 경우 응답에서 코드 블록을 추출하여 diff 표시
-  if (payload.action === 'improve' && response.content) {
-    const improved = extractCodeFromResponse(response.content)
-    if (improved && improved !== payload.code) {
-      host.emit('tool_result', {
-        tool: 'edit_file',
-        result: {
-          path: payload.filePath,
-          before: payload.code,
-          after: improved,
-          action: 'improve'
-        }
-      })
-    }
-  }
 }
 
 function extractCodeFromResponse(content: string): string {

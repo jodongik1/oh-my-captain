@@ -1,5 +1,6 @@
 import readline from 'readline'
 import type { IPCMessage, CoreMessage } from './protocol.js'
+import { logger } from '../utils/logger.js'
 
 type MessageHandler = (msg: IPCMessage, reply: (msg: CoreMessage) => void) => void
 
@@ -46,7 +47,7 @@ export function startServer(onReady: () => void) {
     // 빈 줄 무시
     if (!line.trim()) return
     
-    console.error('[IPC RECV]', line)
+    logger.info({ raw: line }, '[IPC RECV]')
     try {
       const msg = JSON.parse(line) as IPCMessage
       // 대기 중인 요청 응답 처리

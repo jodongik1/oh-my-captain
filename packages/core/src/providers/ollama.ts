@@ -1,6 +1,8 @@
 import { Ollama } from 'ollama'
 import type { LLMProvider, Message, StreamChunk, AssistantMessage, OllamaToolCall } from './types.js'
 import type { ToolDefinition } from '../tools/registry.js'
+import { TextToolCallFilter } from './text_tool_call_filter.js'
+import { logger } from '../utils/logger.js'
 
 export class OllamaProvider implements LLMProvider {
   private client: Ollama
@@ -47,6 +49,7 @@ export class OllamaProvider implements LLMProvider {
 
     let fullContent = ''
     let toolCalls: OllamaToolCall[] | undefined
+    const filter = new TextToolCallFilter()
 
     const abortHandler = () => response.abort()
     effectiveSignal.addEventListener('abort', abortHandler)
@@ -57,7 +60,9 @@ export class OllamaProvider implements LLMProvider {
         const delta = chunk.message?.content
         if (delta) {
           fullContent += delta
-          onChunk({ token: delta })
+          // 도구 호출 XML을 억제하고 안전한 텍스트만 UI로 전달
+          const safe = filter.feed(delta)
+          if (safe) onChunk({ token: safe })
         }
         if (chunk.message?.tool_calls) {
           toolCalls = chunk.message.tool_calls.map((tc: any) => ({
@@ -70,15 +75,40 @@ export class OllamaProvider implements LLMProvider {
             }
           }))
         }
+        // 마지막 청크: 토큰 사용량 및 종료 원인 로깅
+        if ((chunk as any).done) {
+          const doneReason = (chunk as any).done_reason
+          const evalCount = (chunk as any).eval_count
+          const promptEvalCount = (chunk as any).prompt_eval_count
+          if (doneReason === 'length') {
+            logger.warn({ doneReason, evalCount, promptEvalCount, model: this.config.model, contextWindow: this.config.contextWindow }, '[Ollama] ⚠ context window 초과로 응답이 잘림 (done_reason=length)')
+          } else {
+            logger.info({ doneReason, evalCount, promptEvalCount, model: this.config.model }, '[Ollama] 스트림 정상 종료')
+          }
+        }
       }
     } catch (e: any) {
-      // abort에 의한 중단은 정상
+      // abort에 의한 중단 처리
       if (effectiveSignal.aborted) {
+        if (timeoutSignal.aborted) {
+          logger.warn({ timeoutMs, contentLength: fullContent.length }, '[Ollama] ⏱ 타임아웃으로 스트림 중단')
+          throw Object.assign(new Error(`응답 시간이 초과되었습니다 (${timeoutMs / 1000}초). 설정에서 요청 타임아웃을 늘려주세요.`), { code: 'TIMEOUT' })
+        }
+        logger.warn({ contentLength: fullContent.length }, '[Ollama] 사용자 중단')
         return { role: 'assistant', content: fullContent, tool_calls: undefined }
       }
       throw e
     } finally {
       effectiveSignal.removeEventListener('abort', abortHandler)
+      // 보류된 텍스트 처리
+      const remaining = filter.flush()
+      if (remaining) onChunk({ token: remaining })
+    }
+
+    // 텍스트 기반 도구 호출이 감지된 경우 structured tool_calls로 병합
+    const textToolCalls = filter.parsedToolCalls
+    if (textToolCalls.length > 0) {
+      toolCalls = [...(toolCalls ?? []), ...textToolCalls]
     }
 
     return {

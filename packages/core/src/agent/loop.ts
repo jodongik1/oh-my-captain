@@ -49,10 +49,12 @@ export function injectSteering(text: string) {
 
 // ── Main Loop ────────────────────────────────────────────────
 
-export async function runLoop(input: RunLoopInput): Promise<void> {
+export async function runLoop(input: RunLoopInput): Promise<string | null> {
   abortController = new AbortController()
   const signal = abortController.signal
   const { userText, host, provider } = input
+
+  let finalContent: string | null = null
 
   console.error('[Core Trace] Loop 1. Starting context gathering')
   try {
@@ -74,7 +76,7 @@ export async function runLoop(input: RunLoopInput): Promise<void> {
     const messages: Message[] = [
       {
         role: 'system',
-        content: buildSystemPrompt({
+        content: await buildSystemPrompt({
           projectRoot: host.getProjectRoot(),
           openFiles,
           rules,
@@ -123,6 +125,7 @@ export async function runLoop(input: RunLoopInput): Promise<void> {
       // ── LLM 스트리밍 호출 ──
       let response
       console.error('[Core Trace] Loop 4. Sending to provider (iteration', iterations, ')')
+      host.emit('stream_start', { source: 'chat' })
       try {
         response = await provider.stream(
           messages,
@@ -146,7 +149,10 @@ export async function runLoop(input: RunLoopInput): Promise<void> {
 
       host.emit('stream_end', {})
 
-      if (!response.tool_calls?.length) break  // 도구 없음 → 완료
+      if (!response.tool_calls?.length) {  // 도구 없음 → 완료
+        finalContent = typeof response.content === 'string' ? response.content : null
+        break
+      }
 
       messages.push(response)
 
@@ -171,6 +177,8 @@ export async function runLoop(input: RunLoopInput): Promise<void> {
   } catch (e: any) {
     host.emit('error', { message: `에이전트 오류: ${e?.message}`, retryable: false })
   }
+
+  return finalContent
 }
 
 // ── Tool Dispatch (Parallel / Serial) ────────────────────────

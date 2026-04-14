@@ -29,6 +29,7 @@ export interface ApprovalInfo {
 export interface TimelineEntry {
   id: string
   type: 'user' | 'stream' | 'tool_start' | 'tool_result' | 'thinking' | 'error' | 'approval'
+  source?: 'chat' | 'action'  // stream 타입 전용: 일반 채팅 vs 코드 액션 응답
   content?: string
   tool?: string
   args?: unknown
@@ -62,7 +63,7 @@ export interface AppState {
 export type AppAction =
   | { type: 'SET_MODE'; mode: Mode }
   | { type: 'SET_BUSY'; busy: boolean }
-  | { type: 'STREAM_TOKEN'; token: string }
+  | { type: 'STREAM_TOKEN'; token: string; source?: 'chat' | 'action' }
   | { type: 'STREAM_END' }
   | { type: 'ADD_TIMELINE'; entry: TimelineEntry }
   | { type: 'UPDATE_LAST_STREAM'; token: string }
@@ -125,6 +126,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         timeline: [...state.timeline, {
           id: Date.now().toString(),
           type: 'stream',
+          source: action.source,
           content: action.token,
           isStreaming: true,
           timestamp: Date.now()

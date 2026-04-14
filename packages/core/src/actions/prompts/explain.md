@@ -13,6 +13,4 @@
 - 파일: `{{filePath}}` ({{language}})
 - 범위: {{lineRange}}
 
-```{{language}}
 {{code}}
-```

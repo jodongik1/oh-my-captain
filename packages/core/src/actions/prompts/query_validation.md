@@ -12,6 +12,4 @@
 ## 대상 코드
 - 파일: `{{filePath}}` ({{language}})
 
-```{{language}}
 {{code}}
-```

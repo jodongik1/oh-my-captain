@@ -7,6 +7,7 @@
 #   ./build-and-run.sh run      # 실행만 (이전 빌드 결과 사용)
 #   ./build-and-run.sh core     # Core만 빌드
 #   ./build-and-run.sh webview  # Webview만 빌드
+#   ./build-and-run.sh dist     # 배포용 플러그인 zip 생성 (hosts/intellij/build/distributions/)
 #   ./build-and-run.sh clean    # 빌드 산출물 정리
 #
 
@@ -96,6 +97,21 @@ build_webview() {
     ok "Webview 빌드 완료"
 }
 
+# ── Gradle buildPlugin (배포 zip) ──
+build_dist() {
+    header "IntelliJ 플러그인 배포 파일 생성"
+    log "Gradle buildPlugin 실행 중..."
+    (cd "$INTELLIJ_DIR" && ./gradlew buildPlugin)
+    local dist_dir="$INTELLIJ_DIR/build/distributions"
+    if ls "$dist_dir"/*.zip &>/dev/null; then
+        ok "배포 파일 생성 완료:"
+        ls -lh "$dist_dir"/*.zip | awk '{print "    " $5 "  " $9}'
+    else
+        err "배포 파일을 찾을 수 없습니다: $dist_dir"
+        exit 1
+    fi
+}
+
 # ── Gradle runIde ──
 run_ide() {
     header "IntelliJ 플러그인 실행"
@@ -145,6 +161,10 @@ case "$CMD" in
         install_deps
         build_webview
         ;;
+    dist)
+        build_all
+        build_dist
+        ;;
     clean)
         clean
         ;;
@@ -154,12 +174,13 @@ case "$CMD" in
         run_ide
         ;;
     *)
-        echo "Usage: $0 {build|run|core|webview|clean|all}"
+        echo "Usage: $0 {build|run|core|webview|dist|clean|all}"
         echo ""
         echo "  build    전체 빌드만 (Core + Webview)"
         echo "  run      빌드 없이 IntelliJ 실행만"
         echo "  core     Core만 빌드"
         echo "  webview  Webview만 빌드"
+        echo "  dist     전체 빌드 + 배포용 플러그인 zip 생성"
         echo "  clean    빌드 산출물 정리"
         echo "  all      전체 빌드 + IntelliJ 실행 (기본값)"
         exit 1

@@ -3,7 +3,7 @@ import java.time.LocalDate
 
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "2.0.0"
+    id("org.jetbrains.kotlin.jvm") version "2.1.20"
     id("org.jetbrains.intellij.platform") version "2.11.0"
 }
 

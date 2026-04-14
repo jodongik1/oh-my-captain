@@ -1,6 +1,20 @@
 import { useState } from 'react'
 import type { SessionSummary } from '../store'
 
+function formatDate(ts: number): string {
+  const d = new Date(ts)
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const sessionDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  if (sessionDay === todayStart) {
+    return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
+  } else if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })
+  } else {
+    return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
+  }
+}
+
 interface HistorySessionItemProps {
   session: SessionSummary
   isActive: boolean
@@ -40,7 +54,10 @@ export default function HistorySessionItem({
           onClick={e => e.stopPropagation()}
         />
       ) : (
-        <span className="history-item-title" title={session.title}>{session.title}</span>
+        <div className="history-item-info">
+          <span className="history-item-title" title={session.title}>{session.title}</span>
+          <span className="history-item-date">{formatDate(session.updatedAt)}</span>
+        </div>
       )}
       <div className="history-item-actions">
         <button

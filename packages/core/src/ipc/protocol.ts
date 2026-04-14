@@ -20,6 +20,7 @@ export type IntellijMessage =
   // ── 세션 관리 ──
   | { id: string; type: 'session_select';        payload: { sessionId: string } }
   | { id: string; type: 'session_list';          payload: Record<string, never> }
+  | { id: string; type: 'session_new';           payload: Record<string, never> }
   | { id: string; type: 'session_delete';        payload: { sessionId: string } }
   | { id: string; type: 'session_rename';        payload: { sessionId: string; title: string } }
   // ── 모델 선택 ──
@@ -45,6 +46,7 @@ export type CoreMessage =
   | { id: string; type: 'context_request';   payload: { paths: string[] } }
   | { id: string; type: 'approval_request';  payload: ApprovalRequest }
   | { id: string; type: 'safety_snapshot';   payload: { path: string } }
+  | { id: string; type: 'stream_start';      payload: { source: 'chat' | 'action' } }
   | { id: string; type: 'stream_chunk';      payload: { token: string } }
   | { id: string; type: 'stream_end';        payload: Record<string, never> }
   | { id: string; type: 'thinking_start';    payload: Record<string, never> }

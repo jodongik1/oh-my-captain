@@ -71,7 +71,7 @@ export default function Timeline({ entries, isBusy, onApprovalResponse }: Timeli
                   <div className="user-message-block">{entry.content}</div>
                 )}
                 {entry.type === 'stream' && (
-                  <StreamRow content={entry.content ?? ''} isStreaming={entry.isStreaming} />
+                  <StreamRow content={entry.content ?? ''} isStreaming={entry.isStreaming} syntaxHighlight={entry.source === 'action'} />
                 )}
                 {entry.type === 'tool_start' && entry.tool === 'run_terminal' && (
                   <BashRow

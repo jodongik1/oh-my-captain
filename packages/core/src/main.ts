@@ -118,13 +118,21 @@ registerHandler('user_message', async (msg) => {
   state.busy = true
   console.error('[Core Trace] 2. Set busy flag, starting runLoop')
   try {
-    await runLoop({
+    const assistantContent = await runLoop({
       userText: text,
       host: state.host,
       provider: state.provider,
       history: [...state.history],
       settings: state.settings,
     })
+    if (assistantContent && state.sessionId) {
+      sessionDb.addMessage(state.sessionId, 'assistant', assistantContent)
+    }
+    state.history = [
+      ...state.history,
+      { role: 'user', content: text },
+      ...(assistantContent ? [{ role: 'assistant' as const, content: assistantContent }] : [])
+    ]
     sessionDb.autoTitle(state.sessionId)
     console.error('[Core Trace] 3. runLoop completed successfully')
   } catch (err: any) {
@@ -175,6 +183,12 @@ registerHandler('session_select', async (msg) => {
   const messages = sessionDb.getSessionMessages(sessionId)
   state.history = messages.map(m => ({ role: m.role as any, content: m.content }))
   send({ id: msg.id, type: 'session_history', payload: { sessionId, messages } })
+})
+
+registerHandler('session_new', (msg) => {
+  state.sessionId = null
+  state.history = []
+  send({ id: msg.id, type: 'ready', payload: {} })
 })
 
 registerHandler('session_list', async (msg) => {

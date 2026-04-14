@@ -17,13 +17,17 @@ await build({
     'better-sqlite3',
     'sqlite-vec',
     'web-tree-sitter',
-    '*.node'
+    '*.node',
+    'pino',
+    'pino-pretty',
   ],
   format: 'cjs',
 })
 
 // 프롬프트 템플릿 복사 (esbuild는 .md 미포함)
+// actions/prompts와 agent/prompts 모두 OUT_DIR/prompts 로 병합
 cpSync('src/actions/prompts', `${OUT_DIR}/prompts`, { recursive: true })
+cpSync('src/agent/prompts',   `${OUT_DIR}/prompts`, { recursive: true })
 
 // native 모듈 + WASM 런타임을 위한 package.json 생성 후 설치 (transitive deps 해결)
 import { writeFileSync, rmSync } from 'fs'
@@ -40,7 +44,9 @@ const pkg = {
     'better-sqlite3': '^12.4.1',
     'sqlite-vec': '^0.1.9',
     'web-tree-sitter': '^0.22.6',
-    'tree-sitter-wasms': '^0.1.11'
+    'tree-sitter-wasms': '^0.1.11',
+    'pino': '^10.3.1',
+    'pino-pretty': '^13.1.3',
   }
 }
 writeFileSync(resolve(OUT_DIR, 'package.json'), JSON.stringify(pkg, null, 2))
