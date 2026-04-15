@@ -289,6 +289,7 @@ registerHandler('model_switch', async (msg) => {
     )
     state.settings.model.contextWindow = info.contextWindow
     state.provider = createProvider(state.settings)
+    SettingsManager.save(state.settings)
     send({ id: msg.id, type: 'model_switched', payload: { modelId, contextWindow: info.contextWindow } })
   } catch (e: any) {
     send({ id: msg.id, type: 'error', payload: { message: `모델 전환 실패: ${e.message}`, retryable: false } })

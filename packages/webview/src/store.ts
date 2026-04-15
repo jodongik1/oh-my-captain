@@ -183,14 +183,19 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         currentModel: action.modelId,
         contextUsage: action.contextWindow
           ? { ...state.contextUsage, maxTokens: action.contextWindow }
-          : state.contextUsage
+          : state.contextUsage,
+        settings: state.settings ? {
+          ...state.settings,
+          provider: { ...state.settings.provider, ollamaModel: action.modelId },
+          ...(action.contextWindow ? { model: { ...state.settings.model, contextWindow: action.contextWindow } } : {})
+        } : state.settings
       }
 
     case 'SET_AVAILABLE_MODELS':
       return { ...state, availableModels: action.models }
 
     case 'SET_SLASH_FILTER':
-      return { ...state, slashFilter: action.filter, showModelSelector: false }
+      return { ...state, slashFilter: action.filter, ...(action.filter !== null ? { showModelSelector: false } : {}) }
 
     case 'TOGGLE_MODEL_SELECTOR':
       return { ...state, showModelSelector: !state.showModelSelector, slashFilter: null }

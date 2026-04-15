@@ -7,7 +7,7 @@ interface ModelSelectorPopupProps {
   onClose: () => void
 }
 
-export default function ModelSelectorPopup({ models, currentModelId, onSelect, onClose }: ModelSelectorPopupProps) {
+export default function ModelSelectorPopup({ models, currentModelId, onSelect }: ModelSelectorPopupProps) {
   return (
     <div className="model-popup">
       <div className="slash-category">모델 선택</div>
@@ -20,7 +20,7 @@ export default function ModelSelectorPopup({ models, currentModelId, onSelect, o
         <div
           key={model.id}
           className={`model-item ${model.id === currentModelId ? 'selected' : ''}`}
-          onClick={() => { onSelect(model); onClose() }}
+          onClick={() => onSelect(model)}
         >
           <div className="model-item-name">
             {model.id === currentModelId && '✓ '}{model.name}
