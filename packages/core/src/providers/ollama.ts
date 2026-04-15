@@ -75,8 +75,8 @@ export class OllamaProvider implements LLMProvider {
             }
           }))
         }
-        // 마지막 청크: 토큰 사용량 및 종료 원인 로깅
-        if ((chunk as any).done) {
+        // 마지막 청크: abort 상태 재확인 후 로깅
+        if ((chunk as any).done && !effectiveSignal.aborted) {
           const doneReason = (chunk as any).done_reason
           const evalCount = (chunk as any).eval_count
           const promptEvalCount = (chunk as any).prompt_eval_count

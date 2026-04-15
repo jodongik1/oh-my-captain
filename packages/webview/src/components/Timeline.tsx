@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import type { TimelineEntry } from '../store'
 import StreamRow from './timeline/StreamRow'
 import ToolRow from './timeline/ToolRow'
@@ -14,14 +14,31 @@ interface TimelineProps {
 }
 
 export default function Timeline({ entries, isBusy, onApprovalResponse }: TimelineProps) {
+  const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const isAtBottomRef = useRef(true)
+
+  const lastEntry = entries[entries.length - 1]
+  const streamingContentLength =
+    lastEntry?.type === 'stream' && lastEntry.isStreaming
+      ? lastEntry.content?.length ?? 0
+      : 0
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const threshold = 60
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= threshold
+  }, [])
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [entries.length, isBusy])
+    if (!isAtBottomRef.current) return
+    const behavior = streamingContentLength > 0 ? 'instant' : 'smooth'
+    bottomRef.current?.scrollIntoView({ behavior })
+  }, [entries.length, isBusy, streamingContentLength])
 
   return (
-    <div className="timeline">
+    <div className="timeline" ref={scrollRef} onScroll={handleScroll}>
       <div className="timeline-track-container">
         {entries.map(entry => {
           // ── Dot 상태 결정 ──

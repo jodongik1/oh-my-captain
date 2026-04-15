@@ -20,7 +20,7 @@ export type PermissionDecision = 'allow' | 'deny' | 'prompt'
  */
 const MODE_POLICY: Record<string, Record<ToolCategory, PermissionDecision>> = {
   plan:  { readonly: 'allow', write: 'deny',   destructive: 'deny' },
-  ask:   { readonly: 'allow', write: 'allow',  destructive: 'allow' },
+  ask:   { readonly: 'allow', write: 'prompt', destructive: 'prompt' },
   auto:  { readonly: 'allow', write: 'allow',  destructive: 'allow' },
 }
 

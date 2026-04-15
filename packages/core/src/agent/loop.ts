@@ -20,7 +20,7 @@ import defaultShell from 'default-shell'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 
-const MAX_ITERATIONS = 30
+const MAX_ITERATIONS = Infinity
 
 export interface RunLoopInput {
   userText: string
@@ -171,9 +171,6 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
       })
     }
 
-    if (!signal.aborted && iterations >= MAX_ITERATIONS) {
-      host.emit('error', { message: `최대 반복 횟수 초과 (${MAX_ITERATIONS}회)`, retryable: false })
-    }
   } catch (e: any) {
     host.emit('error', { message: `에이전트 오류: ${e?.message}`, retryable: false })
   }

@@ -57,7 +57,8 @@ function renderTemplate(template: string, payload: CodeActionPayload, projectRoo
 export async function executeCodeAction(
   payload: CodeActionPayload,
   provider: LLMProvider,
-  host: HostAdapter
+  host: HostAdapter,
+  signal?: AbortSignal
 ): Promise<void> {
   const template = await loadPromptTemplate(payload.action, host.getProjectRoot())
   const prompt = renderTemplate(template, payload, host.getProjectRoot())
@@ -83,12 +84,14 @@ export async function executeCodeAction(
       ],
       [],  // 도구 없음 (분석만)
       (chunk) => {
+        if (signal?.aborted) return
         if (chunk.token) {
           chunkCount++
           responseChars += chunk.token.length
           host.emit('stream_chunk', { token: chunk.token })
         }
-      }
+      },
+      signal
     )
 
     logger.info({ action: payload.action, chunkCount, responseChars, approxResponseTokens: Math.ceil(responseChars / 4) }, '[Action] 스트림 완료')
@@ -109,6 +112,7 @@ export async function executeCodeAction(
       }
     }
   } catch (e: any) {
+    if (signal?.aborted) return
     const isTimeout = e?.code === 'TIMEOUT'
     logger.error({ action: payload.action, error: e?.message, isTimeout }, '[Action] 스트림 오류')
     host.emit('stream_chunk', { token: `\n\n---\n⚠️ **${e?.message ?? '알 수 없는 오류가 발생했습니다.'}**` })

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { sendToHost } from '../../bridge/jcef'
 import { ExternalLink } from 'lucide-react'
+import DiffView from './DiffView'
 
 interface ToolRowProps {
   tool: string
@@ -16,23 +17,22 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
   const getToolClass = () => {
     const t = tool.toLowerCase()
     if (t === 'read_file') return 'read'
-    if (t === 'write_to_file') return 'write'
-    if (t === 'multi_replace_file_content' || t === 'replace_file_content') return 'edit'
+    if (t === 'write_file') return 'write'
+    if (t === 'edit_file') return 'edit'
     if (t === 'list_dir') return 'bash'
     if (t === 'agent') return 'agent'
-    if (t === 'grep_search' || t === 'search') return 'search'
+    if (t === 'grep_tool' || t === 'search') return 'search'
     return 'generic'
   }
 
   const getDisplayName = () => {
     switch (tool) {
       case 'read_file': return 'Read'
-      case 'write_to_file': return 'Write'
-      case 'multi_replace_file_content':
-      case 'replace_file_content': return 'Edit'
+      case 'write_file': return 'Write'
+      case 'edit_file': return 'Edit'
       case 'list_dir': return 'List Dir'
       case 'agent': return 'Agent'
-      case 'grep_search': return 'Search'
+      case 'grep_tool': return 'Search'
       default: return tool
     }
   }
@@ -87,8 +87,8 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
 
   if (isCompact) {
     const label = tool === 'read_file'
-      ? (isActive ? '읽는 중' : '읽음')
-      : (isActive ? '목록 조회 중' : '목록 조회')
+      ? (isActive ? 'Reading' : 'Read')
+      : (isActive ? 'Listing' : 'Listed')
     
     const target = tool === 'read_file'
       ? getBasename()
@@ -111,10 +111,10 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
 
   // ── IN Content rendering ──
   const renderInContent = () => {
-    if (tool === 'replace_file_content' || tool === 'multi_replace_file_content') {
-      return <span><strong>{getBasename()}</strong> 편집 중</span>
-    } else if (tool === 'write_to_file') {
-      return <span><strong>{getBasename()}</strong>에 쓰는 중</span>
+    if (tool === 'edit_file') {
+      return <span>Editing <strong>{getBasename()}</strong></span>
+    } else if (tool === 'write_file') {
+      return <span>Writing to <strong>{getBasename()}</strong></span>
     } else if (tool === 'agent') {
       const a = args as Record<string, unknown>
       return <span>{(a?.task || a?.TaskName || a?.prompt || 'Sub-agent task') as string}</span>
@@ -126,6 +126,10 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
     const r = result as string | Record<string, any>
     if (!r) return null
     if (typeof r === 'string') return <span>{r}</span>
+
+    // diff 렌더링 (edit_file 결과)
+    if (r.diff) return <DiffView diff={r.diff} />
+
     if (r.output) return <span>{r.output}</span>
     if (r.error) return <span className="error-text">{r.error}</span>
     return <span>{JSON.stringify(r)}</span>

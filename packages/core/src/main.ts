@@ -27,6 +27,7 @@ interface CoreState {
   sessionId: string | null
   history: Message[]
   busy: boolean
+  codeActionController: AbortController | null
 }
 
 const state: CoreState = {
@@ -36,6 +37,7 @@ const state: CoreState = {
   sessionId: null,
   history: [],
   busy: false,
+  codeActionController: null,
 }
 
 // ── Provider 생성 ────────────────────────────────────────────
@@ -147,8 +149,11 @@ registerHandler('user_message', async (msg) => {
 
 registerHandler('abort', () => {
   abortLoop()
-  state.busy = false
-  state.host?.emit('stream_end', {})
+  // 코드 액션도 함께 중단
+  state.codeActionController?.abort()
+  state.codeActionController = null
+  // busy 해제와 stream_end는 runLoop finally 블록에서 처리
+  // 여기서 busy를 해제하면 runLoop가 아직 실행 중인 상태에서 새 메시지가 들어와 두 루프가 동시 실행됨
   console.error('[Core] 사용자 중단')
 })
 
@@ -308,9 +313,15 @@ registerHandler('client_log', async (msg) => {
 registerHandler('code_action', async (msg) => {
   if (!state.provider || !state.host) return
   const payload = msg.payload as import('./ipc/protocol.js').CodeActionPayload
+  const controller = new AbortController()
+  state.codeActionController = controller
   try {
-    await executeCodeAction(payload, state.provider, state.host)
+    await executeCodeAction(payload, state.provider, state.host, controller.signal)
   } catch (e: any) {
-    state.host.emit('error', { message: `코드 액션 실패: ${e.message}`, retryable: false })
+    if (!controller.signal.aborted) {
+      state.host.emit('error', { message: `코드 액션 실패: ${e.message}`, retryable: false })
+    }
+  } finally {
+    state.codeActionController = null
   }
 })

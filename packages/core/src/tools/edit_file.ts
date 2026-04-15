@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'fs/promises'
 import { join, isAbsolute } from 'path'
 import { registerTool } from './registry.js'
 import { generateUnifiedDiff } from '../utils/diff.js'
+import { logger } from '../utils/logger.js'
 import type { HostAdapter } from '../host/interface.js'
 
 const argsSchema = z.object({
@@ -13,6 +14,7 @@ const argsSchema = z.object({
 })
 
 // 최근 read된 파일을 추적하는 stale-write guard
+const CACHE_TTL_MS = 5 * 60 * 1000  // 5분 TTL
 const readCache = new Map<string, { content: string; timestamp: number }>()
 
 /** read_file이 호출될 때 캐시에 기록 (외부에서 호출) */
@@ -51,18 +53,44 @@ registerTool(
       ? args.path
       : join(host.getProjectRoot(), args.path)
 
+    logger.info({ path: args.path, absPath, replace_all: args.replace_all }, '[edit_file] 시작')
+
     // 현재 파일 내용 읽기
     let currentContent: string
     try {
       currentContent = await readFile(absPath, 'utf-8')
-    } catch {
+      logger.debug({ path: args.path, contentLength: currentContent.length }, '[edit_file] 파일 읽기 성공')
+    } catch (e) {
+      logger.error({ path: args.path, error: (e as Error).message }, '[edit_file] 파일 읽기 실패')
       return { error: `파일을 찾을 수 없습니다: ${args.path}` }
     }
 
     // Stale-write guard: read_file로 읽은 후 외부에서 변경되었는지 확인
     const cached = readCache.get(absPath)
-    if (cached && cached.content !== currentContent) {
-      // 디스크의 파일이 캐시와 다름 → 외부 수정 감지
+
+    // read_file을 먼저 호출했는지 확인
+    if (!cached) {
+      logger.warn({ path: args.path }, '[edit_file] read_file 없이 직접 호출됨')
+      return {
+        error: 'edit_file 사용 전 반드시 read_file로 파일을 먼저 읽어야 합니다.',
+        hint: 'read_file을 호출해 파일 내용을 먼저 읽고, 그 후 edit_file을 사용하세요.',
+      }
+    }
+
+    // TTL 초과 확인
+    const cacheAge = Date.now() - cached.timestamp
+    if (cacheAge > CACHE_TTL_MS) {
+      logger.warn({ path: args.path, cacheAgeMs: cacheAge, ttlMs: CACHE_TTL_MS }, '[edit_file] 캐시 TTL 초과')
+      readCache.delete(absPath)
+      return {
+        error: '캐시가 만료되었습니다. read_file로 파일을 다시 읽어주세요.',
+        stale: true,
+      }
+    }
+
+    // 외부 수정 감지
+    if (cached.content !== currentContent) {
+      logger.warn({ path: args.path }, '[edit_file] 외부 파일 수정 감지')
       readCache.set(absPath, { content: currentContent, timestamp: Date.now() })
       return {
         error: '파일이 마지막 read_file 이후 변경되었습니다. 다시 read_file로 읽어주세요.',
@@ -70,15 +98,21 @@ registerTool(
       }
     }
 
+    logger.debug({ path: args.path }, '[edit_file] guard 검사 통과')
+
     // old_string 매칭 검증
     const occurrences = countOccurrences(currentContent, args.old_string)
+    logger.debug({ path: args.path, occurrences, oldStringLength: args.old_string.length }, '[edit_file] 매칭 개수')
+
     if (occurrences === 0) {
+      logger.warn({ path: args.path }, '[edit_file] old_string을 찾을 수 없음')
       return {
         error: 'old_string을 파일에서 찾을 수 없습니다. 공백/들여쓰기를 포함하여 정확히 입력하세요.',
         hint: '파일을 다시 read_file로 읽고 정확한 코드 블록을 확인하세요.',
       }
     }
     if (occurrences > 1 && !args.replace_all) {
+      logger.warn({ path: args.path, occurrences }, '[edit_file] 중복 매칭')
       return {
         error: `old_string이 ${occurrences}개 매칭됩니다. replace_all: true로 모두 교체하거나 더 많은 주변 코드를 포함하세요.`,
         occurrences,
@@ -87,29 +121,41 @@ registerTool(
 
     // 변경 전 스냅샷
     await host.triggerSafetySnapshot(absPath)
+    logger.debug({ path: args.path }, '[edit_file] safety snapshot 생성')
 
     // 교체 실행
     let newContent: string
     if (args.replace_all) {
+      logger.info({ path: args.path, occurrences }, '[edit_file] 전체 교체 실행')
       newContent = currentContent.split(args.old_string).join(args.new_string)
     } else {
+      logger.info({ path: args.path }, '[edit_file] 첫 번째 매칭만 교체')
       const idx = currentContent.indexOf(args.old_string)
       newContent = currentContent.slice(0, idx) + args.new_string + currentContent.slice(idx + args.old_string.length)
     }
 
-    await writeFile(absPath, newContent, 'utf-8')
+    try {
+      await writeFile(absPath, newContent, 'utf-8')
+      logger.info({ path: args.path, newContentLength: newContent.length }, '[edit_file] 파일 쓰기 성공')
+    } catch (e) {
+      logger.error({ path: args.path, error: (e as Error).message }, '[edit_file] 파일 쓰기 실패')
+      throw e
+    }
 
     // 캐시 업데이트
     readCache.set(absPath, { content: newContent, timestamp: Date.now() })
 
     // diff 생성
     const diff = generateUnifiedDiff(args.path, currentContent, newContent)
+    const linesChanged = diff.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length
+
+    logger.info({ path: args.path, linesChanged, replacements: args.replace_all ? occurrences : 1 }, '[edit_file] 완료')
 
     return {
       path: args.path,
       replacements: args.replace_all ? occurrences : 1,
       diff,
-      linesChanged: diff.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length,
+      linesChanged,
     }
   }
 )
