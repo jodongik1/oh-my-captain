@@ -148,4 +148,5 @@ export interface CaptainSettings {
     contextWindow: number
     requestTimeoutMs: number
   }
+  cachedModels?: ModelInfo[]
 }

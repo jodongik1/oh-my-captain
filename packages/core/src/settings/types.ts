@@ -20,9 +20,16 @@ export interface ModelSettings {
   requestTimeoutMs: number         // 기본: 30000 (30초). p-timeout에 사용
 }
 
+export interface CachedModelInfo {
+  id: string
+  name: string
+  contextWindow?: number
+}
+
 export interface CaptainSettings {
   provider: ProviderSettings
   model: ModelSettings
+  cachedModels?: CachedModelInfo[]
 }
 
 export const DEFAULT_SETTINGS: CaptainSettings = {

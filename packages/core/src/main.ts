@@ -224,7 +224,8 @@ registerHandler('settings_get', (msg) => {
 })
 
 registerHandler('settings_update', (msg) => {
-  state.settings = msg.payload as CaptainSettings
+  const incoming = msg.payload as CaptainSettings
+  state.settings = { ...incoming, cachedModels: state.settings.cachedModels }
   if (state.host) {
     state.provider = createProvider(state.settings)
   }
@@ -249,6 +250,8 @@ registerHandler('connection_test', async (msg) => {
         }
       })
     )
+    state.settings.cachedModels = modelInfos
+    SettingsManager.save(state.settings)
     send({ id: msg.id, type: 'connection_test_result', payload: { success: true, models: modelInfos } })
     console.error(`[Core] 연결 테스트 성공: ${baseUrl}, ${models.length}개 모델`)
   } catch (e: any) {

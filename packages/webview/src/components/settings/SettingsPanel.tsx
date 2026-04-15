@@ -1,10 +1,19 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { sendToHost } from '../../bridge/jcef'
+import { toast } from 'sonner'
 import OllamaSettings from './OllamaSettings'
+
+interface ModelInfo {
+  id: string
+  name: string
+  contextWindow?: number
+}
 
 interface SettingsPanelProps {
   initialSettings: any // CaptainSettings type
+  initialModels?: ModelInfo[]
   onClose: () => void
+  onModelsUpdate?: (models: ModelInfo[]) => void
 }
 
 export interface LocalSettings {
@@ -70,38 +79,14 @@ function buildPayload(s: LocalSettings) {
   }
 }
 
-/** API Key 입력 + 표시/숨김 토글 */
-function ApiKeyField({
-  value,
-  placeholder,
-  onChange,
-}: {
-  value: string
-  placeholder: string
-  onChange: (v: string) => void
-}) {
-  const [showKey, setShowKey] = useState(false)
-  return (
-    <div className="settings-row">
-      <input
-        className="settings-input"
-        type={showKey ? 'text' : 'password'}
-        value={value}
-        placeholder={placeholder}
-        onChange={e => onChange(e.target.value)}
-      />
-      <button className="settings-btn" onClick={() => setShowKey(!showKey)}>
-        {showKey ? '숨기기' : '표시'}
-      </button>
-    </div>
-  )
-}
-
-export default function SettingsPanel({ initialSettings, onClose }: SettingsPanelProps) {
+export default function SettingsPanel({ initialSettings, initialModels, onClose, onModelsUpdate }: SettingsPanelProps) {
   const [settings, setSettings] = useState<LocalSettings>(() => parseCaptainToLocal(initialSettings))
   const saved = useRef(settings)
   const [dirty, setDirty] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saved'>('idle')
+
+  const initLocal = parseCaptainToLocal(initialSettings)
+  const [verifiedOllamaUrl, setVerifiedOllamaUrl] = useState(initLocal.ollamaBaseUrl)
+  const [verifiedOllamaApiKey, setVerifiedOllamaApiKey] = useState(initLocal.ollamaApiKey)
 
   useEffect(() => {
     console.error('[REACT SettingsPanel] useEffect triggered with initialSettings:', JSON.stringify(initialSettings))
@@ -110,37 +95,43 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
     setSettings(updated)
     saved.current = updated
     setDirty(false)
+    setVerifiedOllamaUrl(updated.ollamaBaseUrl)
+    setVerifiedOllamaApiKey(updated.ollamaApiKey)
   }, [initialSettings])
 
   const handleChange = useCallback((patch: Record<string, unknown>) => {
     setSettings(prev => ({ ...prev, ...patch } as LocalSettings))
     setDirty(true)
-    setSaveStatus('idle')
   }, [])
-
-  const handleSave = useCallback(() => {
-    // Core에 전송 (Core가 저장 처리)
-    sendToHost({ type: 'settings_update', payload: buildPayload(settings) })
-    saved.current = { ...settings }
-    setDirty(false)
-    setSaveStatus('saved')
-    setTimeout(() => setSaveStatus('idle'), 2000)
-  }, [settings])
 
   const handleCancel = useCallback(() => {
     setSettings({ ...saved.current })
     setDirty(false)
-    setSaveStatus('idle')
   }, [])
 
-  const handleClose = useCallback(() => {
-    // 미저장 변경은 자동 폐기 (JCEF 환경에서 confirm 미지원)
-    if (dirty) {
-      setSettings({ ...saved.current })
-      setDirty(false)
+  const handleConnectionSuccess = useCallback((url: string, apiKey: string, models: ModelInfo[]) => {
+    setVerifiedOllamaUrl(url)
+    setVerifiedOllamaApiKey(apiKey)
+    onModelsUpdate?.(models)
+  }, [onModelsUpdate])
+
+  const handleSave = useCallback(() => {
+    if (settings.provider === 'ollama') {
+      const urlChanged = settings.ollamaBaseUrl !== verifiedOllamaUrl
+      const apiKeyChanged = settings.ollamaApiKey !== verifiedOllamaApiKey
+      if (urlChanged || apiKeyChanged) {
+        toast.warning('연결 테스트 성공 후 저장할 수 있습니다', { duration: 2000 })
+        return
+      }
     }
+    // Core에 전송 (Core가 저장 처리)
+    sendToHost({ type: 'settings_update', payload: buildPayload(settings) })
+    saved.current = { ...settings }
+    setDirty(false)
+    toast.success('설정 정보를 저장하였습니다', { duration: 1000 })
     onClose()
-  }, [dirty, onClose])
+  }, [settings, onClose, verifiedOllamaUrl, verifiedOllamaApiKey])
+
 
   // 숫자 값 clamp 유틸
   const clampNumber = (val: number, min: number, max: number) =>
@@ -149,33 +140,33 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
   return (
     <div className="settings-panel">
       <div className="settings-header">
-        <button className="icon-btn" onClick={handleClose}>←</button>
         <span>설정</span>
         <div className="settings-header-actions">
-          {dirty && (
-            <button className="settings-btn cancel-btn" onClick={handleCancel}>취소</button>
+          {dirty ? (
+            <>
+              <button className="settings-btn cancel-btn" onClick={handleCancel}>취소</button>
+              <button
+                className="settings-btn save-btn active"
+                onClick={handleSave}
+              >
+                저장
+              </button>
+            </>
+          ) : (
+            <button className="settings-btn cancel-btn" onClick={onClose}>닫기</button>
           )}
-          <button
-            className={`settings-btn save-btn ${dirty ? 'active' : ''} ${saveStatus === 'saved' ? 'saved' : ''}`}
-            onClick={handleSave}
-            disabled={!dirty}
-          >
-            {saveStatus === 'saved' ? '✓ 저장됨' : '저장'}
-          </button>
         </div>
       </div>
       <div className="settings-content">
         {/* ── Provider 선택 ── */}
         <div className="settings-group">
-          <div className="settings-label">AI 제공자</div>
+          <div className="settings-label">AI 모델 제공자</div>
           <select
             className="settings-select"
             value={settings.provider}
             onChange={e => handleChange({ provider: e.target.value })}
           >
             <option value="ollama">Ollama</option>
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
           </select>
         </div>
 
@@ -185,65 +176,17 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
             baseUrl={settings.ollamaBaseUrl}
             apiKey={settings.ollamaApiKey}
             model={settings.ollamaModel}
+            initialModels={initialModels}
             onChange={handleChange}
+            onConnectionSuccess={handleConnectionSuccess}
           />
-        )}
-
-        {settings.provider === 'openai' && (
-          <>
-            <div className="settings-group">
-              <div className="settings-label">API 키</div>
-              <ApiKeyField
-                value={settings.openAiApiKey}
-                placeholder="sk-..."
-                onChange={v => handleChange({ openAiApiKey: v })}
-              />
-            </div>
-            <div className="settings-group">
-              <div className="settings-label">모델</div>
-              <input
-                className="settings-input"
-                value={settings.openAiModel}
-                onChange={e => handleChange({ openAiModel: e.target.value })}
-              />
-            </div>
-            <div className="settings-group">
-              <div className="settings-label">Base URL</div>
-              <input
-                className="settings-input"
-                value={settings.openAiBaseUrl}
-                onChange={e => handleChange({ openAiBaseUrl: e.target.value })}
-              />
-            </div>
-          </>
-        )}
-
-        {settings.provider === 'anthropic' && (
-          <>
-            <div className="settings-group">
-              <div className="settings-label">API 키</div>
-              <ApiKeyField
-                value={settings.anthropicApiKey}
-                placeholder="sk-ant-..."
-                onChange={v => handleChange({ anthropicApiKey: v })}
-              />
-            </div>
-            <div className="settings-group">
-              <div className="settings-label">모델</div>
-              <input
-                className="settings-input"
-                value={settings.anthropicModel}
-                onChange={e => handleChange({ anthropicModel: e.target.value })}
-              />
-            </div>
-          </>
         )}
 
         {/* ── Common Settings (모든 Provider 공통) ── */}
         <div className="settings-divider" />
 
         <div className="settings-group">
-          <div className="settings-label">컨텍스트 윈도우</div>
+          <div className="settings-label">컨텍스트 윈도우 (토큰)</div>
           <input
             className="settings-input"
             type="number"
@@ -258,15 +201,15 @@ export default function SettingsPanel({ initialSettings, onClose }: SettingsPane
         </div>
 
         <div className="settings-group">
-          <div className="settings-label">요청 타임아웃 (ms)</div>
+          <div className="settings-label">요청 타임아웃 (초)</div>
           <input
             className="settings-input"
             type="number"
-            min={5000}
-            max={600000}
-            value={settings.requestTimeoutMs}
+            min={5}
+            max={600}
+            value={Math.round(settings.requestTimeoutMs / 1000)}
             onChange={e => handleChange({
-              requestTimeoutMs: clampNumber(Number(e.target.value), 5000, 600000)
+              requestTimeoutMs: clampNumber(Number(e.target.value) * 1000, 5000, 600000)
             })}
           />
           <div className="settings-hint">요청당 최대 대기 시간. 대용량 모델은 값을 높게 설정하세요.</div>

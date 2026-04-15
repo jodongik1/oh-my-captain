@@ -203,77 +203,107 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: 20px;
   padding: 40px 20px;
   user-select: none;
 }
 
-.empty-logo {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--fg-secondary);
-  letter-spacing: 0.02em;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.empty-logo .logo-icon {
-  font-size: 20px;
-  color: #d97706;
-}
-
-.empty-hint {
-  text-align: center;
-  color: var(--fg-muted);
-  font-size: 13px;
-  line-height: 1.6;
-  max-width: 280px;
-}
-
-.hero-icon-container {
+/* ── Compass SVG ── */
+.welcome-compass-wrapper {
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin: 16px 0 24px 0;
+  margin-bottom: 4px;
 }
 
-.hero-icon-glow {
+.welcome-compass-wrapper::before {
+  content: '';
   position: absolute;
-  width: 90px;
-  height: 90px;
+  width: 100px;
+  height: 100px;
   background: var(--mode-plan);
-  filter: blur(40px);
-  opacity: 0.15;
+  filter: blur(48px);
+  opacity: 0.12;
   border-radius: 50%;
-  animation: pulse-glow 4s ease-in-out infinite alternate;
+  pointer-events: none;
 }
 
-.hero-icon-main {
-  color: var(--fg-primary);
-  opacity: 0.85;
+.compass-svg {
+  position: relative;
   z-index: 1;
 }
 
-.hero-icon-sparkle {
-  position: absolute;
-  top: -6px;
-  right: -10px;
-  color: var(--mode-ask);
-  z-index: 2;
-  animation: float 3s ease-in-out infinite;
+.compass-ring {
+  fill: none;
+  stroke: var(--fg-faint);
+  stroke-width: 1.5;
 }
 
-@keyframes pulse-glow {
-  from { opacity: 0.08; transform: scale(0.8); }
-  to { opacity: 0.25; transform: scale(1.1); }
+.compass-needle {
+  transform-origin: 12px 12px;
+  animation: compass-settle 2.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 }
 
-@keyframes float {
-  0% { transform: translateY(0px) rotate(0deg); }
-  50% { transform: translateY(-4px) rotate(5deg); }
-  100% { transform: translateY(0px) rotate(0deg); }
+.compass-needle-north {
+  fill: var(--mode-plan);
+  opacity: 0.9;
+}
+
+.compass-needle-south {
+  fill: #3a3a3a;
+}
+
+/* ── Brand typography ── */
+.welcome-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.welcome-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--fg-primary);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.welcome-tagline {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ── Divider ── */
+.welcome-divider {
+  width: 32px;
+  height: 1px;
+  background: var(--border);
+  border-radius: 1px;
+}
+
+/* ── Hint text ── */
+.welcome-hint {
+  text-align: center;
+  color: var(--fg-muted);
+  font-size: 13px;
+  line-height: 1.7;
+  max-width: 240px;
+}
+
+/* ── Animations ── */
+@keyframes compass-settle {
+  0%   { transform: rotate(-22deg); }
+  28%  { transform: rotate(16deg); }
+  50%  { transform: rotate(-9deg); }
+  68%  { transform: rotate(5deg); }
+  82%  { transform: rotate(-2deg); }
+  92%  { transform: rotate(1deg); }
+  100% { transform: rotate(0deg); }
 }
 
 /* ═══════════════════════════════
@@ -1226,7 +1256,7 @@ textarea.input-field:disabled {
 /* ═══ Settings Panel ═══ */
 .settings-panel {
   position: absolute;
-  top: 38px;
+  top: 0;
   left: 0;
   right: 0;
   bottom: 0;

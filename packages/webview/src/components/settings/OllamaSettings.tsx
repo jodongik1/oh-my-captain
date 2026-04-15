@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { sendToHost, onHostMessage } from '../../bridge/jcef'
 
 interface OllamaSettingsProps {
   baseUrl: string
   apiKey: string
   model: string
+  initialModels?: ModelInfo[]
   onChange: (patch: Record<string, unknown>) => void
+  onConnectionSuccess?: (url: string, apiKey: string, models: ModelInfo[]) => void
 }
 
 interface ModelInfo {
@@ -15,13 +17,13 @@ interface ModelInfo {
 }
 
 export default function OllamaSettings({
-  baseUrl, apiKey, model, onChange
+  baseUrl, apiKey, model, initialModels, onChange, onConnectionSuccess
 }: OllamaSettingsProps) {
-  const [useCustomUrl, setUseCustomUrl] = useState(baseUrl !== 'http://localhost:11434')
-  const [showKey, setShowKey] = useState(false)
   const [connStatus, setConnStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle')
   const [connError, setConnError] = useState('')
-  const [models, setModels] = useState<ModelInfo[]>([])
+  const [models, setModels] = useState<ModelInfo[]>(initialModels ?? [])
+  const testingUrl = useRef(baseUrl)
+  const testingApiKey = useRef(apiKey)
 
   // Core에서 connection_test_result 수신
   useEffect(() => {
@@ -29,9 +31,11 @@ export default function OllamaSettings({
       if (msg.type === 'connection_test_result') {
         const p = msg.payload as { success: boolean; models?: ModelInfo[]; error?: string }
         if (p.success) {
+          const fetchedModels = p.models ?? []
           setConnStatus('ok')
           setConnError('')
-          if (p.models) setModels(p.models)
+          setModels(fetchedModels)
+          onConnectionSuccess?.(testingUrl.current, testingApiKey.current, fetchedModels)
         } else {
           setConnStatus('error')
           setConnError(p.error || 'Connection failed')
@@ -42,19 +46,21 @@ export default function OllamaSettings({
         setModels(p.models || [])
       }
     })
-  }, [])
+  }, [onConnectionSuccess])
 
   const testConnection = useCallback(() => {
     setConnStatus('testing')
     setConnError('')
+    testingUrl.current = baseUrl
+    testingApiKey.current = apiKey
     sendToHost({
       type: 'connection_test',
       payload: {
-        baseUrl: useCustomUrl ? baseUrl : 'http://localhost:11434',
+        baseUrl: baseUrl,
         apiKey: apiKey || undefined
       }
     })
-  }, [baseUrl, apiKey, useCustomUrl])
+  }, [baseUrl, apiKey])
 
   const handleModelSelect = useCallback((modelId: string) => {
     onChange({ ollamaModel: modelId })
@@ -67,50 +73,30 @@ export default function OllamaSettings({
   return (
     <div>
       {/* Custom URL */}
-      <label className="settings-checkbox">
+      <div className="settings-group">
+        <div className="settings-label">URL</div>
         <input
-          type="checkbox"
-          checked={useCustomUrl}
+          className="settings-input"
+          value={baseUrl}
+          placeholder="http://localhost:11434"
           onChange={e => {
-            setUseCustomUrl(e.target.checked)
-            if (!e.target.checked) onChange({ ollamaBaseUrl: 'http://localhost:11434' })
-            setModels([])
+            onChange({ ollamaBaseUrl: e.target.value })
             setConnStatus('idle')
+            setModels([])
           }}
         />
-        커스텀 Base URL 사용
-      </label>
-
-      {useCustomUrl && (
-        <div className="settings-group">
-          <input
-            className="settings-input"
-            value={baseUrl}
-            placeholder="http://localhost:11434"
-            onChange={e => {
-              onChange({ ollamaBaseUrl: e.target.value })
-              setConnStatus('idle')
-              setModels([])
-            }}
-          />
-        </div>
-      )}
+      </div>
 
       {/* API Key */}
       <div className="settings-group">
         <div className="settings-label">API 키</div>
-        <div className="settings-row">
-          <input
-            className="settings-input"
-            type={showKey ? 'text' : 'password'}
-            value={apiKey}
-            placeholder="로컬 설치의 경우 비워두세요"
-            onChange={e => onChange({ ollamaApiKey: e.target.value })}
-          />
-          <button className="settings-btn" onClick={() => setShowKey(!showKey)}>
-            {showKey ? '숨기기' : '표시'}
-          </button>
-        </div>
+        <input
+          className="settings-input"
+          type="password"
+          value={apiKey}
+          placeholder="로컬 설치의 경우 비워두세요"
+          onChange={e => onChange({ ollamaApiKey: e.target.value })}
+        />
       </div>
 
       {/* Connection Test — URL/Key 바로 아래 배치 */}
@@ -140,7 +126,7 @@ export default function OllamaSettings({
             )}
             {models.map(m => (
               <option key={m.id} value={m.id}>
-                {m.name}{m.contextWindow ? ` (${(m.contextWindow / 1024).toFixed(0)}K)` : ''}
+                {m.name}
               </option>
             ))}
           </select>

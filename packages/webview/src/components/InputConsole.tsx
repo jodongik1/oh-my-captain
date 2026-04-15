@@ -21,7 +21,6 @@ interface InputConsoleProps {
   onToggleModelSelector: () => void
   onModelSelect: (model: ModelInfo) => void
   onNewSession: () => void
-  onClearContext: () => void
   onOpenSettings: () => void
 }
 
@@ -45,7 +44,7 @@ export default function InputConsole({
   mode, contextUsage, isBusy, currentModel, availableModels,
   showModelSelector, slashFilter, onSend, onModeChange, onAbort,
   onSlashFilterChange, onToggleModelSelector, onModelSelect,
-  onNewSession, onClearContext, onOpenSettings
+  onNewSession, onOpenSettings
 }: InputConsoleProps) {
   const [text, setText] = useState('')
   const [showModePopup, setShowModePopup] = useState(false)
@@ -93,27 +92,7 @@ export default function InputConsole({
 
   const buildCommands = (): SlashCommand[] => [
     {
-      name: '/clear', label: '대화 초기화', category: '컨텍스트',
-      action: () => { onClearContext(); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
-    },
-    {
-      name: '/explain', label: '코드 설명...', category: '컨텍스트',
-      action: () => { onSend('/explain'); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
-    },
-    {
-      name: '/review', label: '코드 리뷰...', category: '컨텍스트',
-      action: () => { onSend('/review'); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
-    },
-    {
-      name: '/improve', label: '코드 개선...', category: '컨텍스트',
-      action: () => { onSend('/improve'); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
-    },
-    {
-      name: '/test', label: '테스트 생성...', category: '컨텍스트',
-      action: () => { onSend('/test'); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
-    },
-    {
-      name: '/model', label: '모델 변경...', category: '모델',
+      name: '/model', label: '모델 변경', category: '모델',
       description: currentModel ? `현재: ${currentModel}` : '기본값 (권장)',
       action: () => {
         onToggleModelSelector()
@@ -124,7 +103,7 @@ export default function InputConsole({
       }
     },
     {
-      name: '/new', label: '새 대화...', category: '사용자 설정',
+      name: '/new', label: '새 대화', category: '사용자 설정',
       action: () => { onNewSession(); onSlashFilterChange(null); setShowActionMenu(false); setText('') }
     },
     {

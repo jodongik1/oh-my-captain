@@ -32,7 +32,8 @@ export class SettingsManager {
         model: {
           ...DEFAULT_SETTINGS.model,
           ...(parsed.model || {})
-        }
+        },
+        cachedModels: parsed.cachedModels ?? []
       }
       console.error('[Core DEBUG] SettingsManager.load parsed JSON object:', JSON.stringify(parsed));
       console.error('[Core DEBUG] SettingsManager.load merged result:', JSON.stringify(merged));

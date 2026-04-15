@@ -6,8 +6,19 @@ import Timeline from './components/Timeline'
 import InputConsole from './components/InputConsole'
 import HistoryPopup from './components/HistoryPopup'
 import SettingsPanel from './components/settings/SettingsPanel'
+import { Toaster } from 'sonner'
 import type { TimelineEntry, ModelInfo } from './store'
-import { Compass, Sparkles } from 'lucide-react'
+function CompassIcon() {
+  return (
+    <svg width="72" height="72" viewBox="0 0 24 24" className="compass-svg" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" className="compass-ring" />
+      <g className="compass-needle">
+        <polygon points="16.24,7.76 14.12,14.12 9.88,9.88" className="compass-needle-north" />
+        <polygon points="7.76,16.24 14.12,14.12 9.88,9.88" className="compass-needle-south" />
+      </g>
+    </svg>
+  )
+}
 
 export default function App() {
   const [state, dispatch] = useAppStore()
@@ -126,6 +137,9 @@ export default function App() {
           const p = msg.payload as { settings: any; isFirstTime: boolean }
           console.error('[REACT IPC DEBUG] settings_loaded RECEIVED:', JSON.stringify(msg.payload))
           dispatch({ type: 'SETTINGS_LOADED', isConfigured: !p.isFirstTime, settings: p.settings })
+          if (p.settings?.cachedModels?.length) {
+            dispatch({ type: 'SET_AVAILABLE_MODELS', models: p.settings.cachedModels })
+          }
           break
         }
 
@@ -198,16 +212,19 @@ export default function App() {
 
   return (
     <div className="app-container">
-      <HeaderBar
-        sessionTitle={state.sessionTitle}
-        onHistoryToggle={() => {
-          dispatch({ type: 'TOGGLE_HISTORY' })
-          if (!state.showHistory) sendToHost({ type: 'session_list', payload: {} })
-        }}
-        onNewSession={handleNewSession}
-        onTitleChange={handleTitleChange}
-        isBusy={state.isBusy}
-      />
+      <Toaster theme="dark" position="bottom-center" />
+      {!state.showSettings && (
+        <HeaderBar
+          sessionTitle={state.sessionTitle}
+          onHistoryToggle={() => {
+            dispatch({ type: 'TOGGLE_HISTORY' })
+            if (!state.showHistory) sendToHost({ type: 'session_list', payload: {} })
+          }}
+          onNewSession={handleNewSession}
+          onTitleChange={handleTitleChange}
+          isBusy={state.isBusy}
+        />
+      )}
 
       {state.showHistory && (
         <HistoryPopup
@@ -221,21 +238,25 @@ export default function App() {
       )}
 
       {state.showSettings && (
-        <SettingsPanel 
+        <SettingsPanel
           initialSettings={state.settings}
-          onClose={() => dispatch({ type: 'TOGGLE_SETTINGS' })} 
+          initialModels={state.availableModels}
+          onClose={() => dispatch({ type: 'TOGGLE_SETTINGS' })}
+          onModelsUpdate={(models) => dispatch({ type: 'SET_AVAILABLE_MODELS', models })}
         />
       )}
 
       {state.isConfigured === false ? (
         <div className="empty-state">
-          <div className="empty-logo">Welcome to Captain</div>
-          <div className="hero-icon-container">
-            <div className="hero-icon-glow" />
-            <Compass className="hero-icon-main" strokeWidth={1.5} size={50} />
-            <Sparkles className="hero-icon-sparkle" strokeWidth={2} size={22} />
+          <div className="welcome-compass-wrapper">
+            <CompassIcon />
           </div>
-          <div className="empty-hint" style={{ marginTop: '20px' }}>
+          <div className="welcome-brand">
+            <h1 className="welcome-title">Oh My Captain</h1>
+            <p className="welcome-tagline">AI 코딩 어시스턴트</p>
+          </div>
+          <div className="welcome-divider" />
+          <div className="welcome-hint">
             <p>플러그인을 시작하려면 최초 모델 연결이 필요합니다.</p>
             <button
               className="settings-btn save-btn active"
@@ -250,16 +271,17 @@ export default function App() {
         <Timeline entries={state.timeline} isBusy={state.isBusy} onApprovalResponse={handleApprovalResponse} />
       ) : (
         <div className="empty-state">
-          <div className="empty-logo">Oh My Captain</div>
-          <div className="hero-icon-container">
-            <div className="hero-icon-glow" />
-            <Compass className="hero-icon-main" strokeWidth={1.5} size={50} />
-            <Sparkles className="hero-icon-sparkle" strokeWidth={2} size={22} />
+          <div className="welcome-compass-wrapper">
+            <CompassIcon />
           </div>
-          <div className="empty-hint">
-            Type a message below or use slash commands
-            to get started with your AI coding assistant.
+          <div className="welcome-brand">
+            <h1 className="welcome-title">Oh My Captain</h1>
+            <p className="welcome-tagline">AI 코딩 어시스턴트</p>
           </div>
+          <div className="welcome-divider" />
+          <p className="welcome-hint">
+            아래에 메시지를 입력하거나<br />슬래시 명령어로 시작하세요.
+          </p>
         </div>
       )}
 
@@ -279,10 +301,6 @@ export default function App() {
           onToggleModelSelector={() => dispatch({ type: 'TOGGLE_MODEL_SELECTOR' })}
           onModelSelect={handleModelSelect}
           onNewSession={handleNewSession}
-          onClearContext={() => {
-            dispatch({ type: 'NEW_SESSION' })
-            sendToHost({ type: 'session_new', payload: {} })
-          }}
           onOpenSettings={() => dispatch({ type: 'TOGGLE_SETTINGS' })}
         />
       )}
