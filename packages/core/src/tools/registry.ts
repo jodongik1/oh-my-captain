@@ -12,6 +12,7 @@ export interface ToolDefinition {
   }
   category: ToolCategory          // 권한 분류: readonly | write | destructive
   concurrencySafe: boolean        // 병렬 실행 가능 여부
+  preview?: (args: Record<string, unknown>, host: HostAdapter) => Promise<Record<string, unknown>>
 }
 
 type ToolImpl = (args: Record<string, unknown>, host: HostAdapter) => Promise<unknown>
@@ -64,11 +65,20 @@ export async function dispatch(
       return result
     }
     case 'prompt': {
+      let approvalDetails: Record<string, unknown> = call.function.arguments
+      if (tool.definition.preview) {
+        try {
+          const previewResult = await tool.definition.preview(call.function.arguments, host)
+          approvalDetails = { ...approvalDetails, ...previewResult }
+        } catch {
+          // preview 실패 시 기존 방식으로 진행
+        }
+      }
       const approved = await host.requestApproval({
         action: call.function.name,
         description: formatApprovalDescription(call.function.name, call.function.arguments),
         risk: tool.definition.category === 'destructive' ? 'high' : 'medium',
-        details: call.function.arguments,
+        details: approvalDetails,
       })
       if (!approved) return { error: '사용자가 거부했습니다.' }
       break

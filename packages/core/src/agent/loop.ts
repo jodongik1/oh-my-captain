@@ -99,6 +99,7 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
     ]
 
     let iterations = 0
+    let noToolRetried = false
 
     // 도구 호출이 없는 최종 응답이 올 때까지 LLM ↔ 도구 사이클을 반복
     while (iterations++ < MAX_ITERATIONS) {
@@ -164,6 +165,18 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
       host.emit('stream_end', {})
 
       if (!response.tool_calls?.length) {
+        // 이번 루프에서 도구가 한 번도 사용되지 않았고 아직 재시도 안 했으면 재시도
+        const hasToolsInHistory = messages.some(m => m.role === 'tool')
+        if (!hasToolsInHistory && !noToolRetried) {
+          noToolRetried = true
+          log.debug('Loop: no tools called, injecting retry steering')
+          messages.push(response)
+          messages.push({
+            role: 'user',
+            content: '도구를 사용하여 실제로 파일을 수정해주세요. 코드를 텍스트로 설명하지 말고, read_file로 파일을 읽은 뒤 edit_file 또는 write_file로 직접 변경을 수행하세요.',
+          })
+          continue
+        }
         // 도구 호출 없음 → 최종 답변. 루프 종료
         finalContent = typeof response.content === 'string' ? response.content : null
         break

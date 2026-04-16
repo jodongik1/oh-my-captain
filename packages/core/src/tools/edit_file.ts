@@ -46,6 +46,25 @@ registerTool(
     },
     category: 'write',
     concurrencySafe: false,
+    preview: async (rawArgs, host) => {
+      const args = argsSchema.parse(rawArgs)
+      const absPath = isAbsolute(args.path) ? args.path : join(host.getProjectRoot(), args.path)
+      try {
+        const currentContent = await readFile(absPath, 'utf-8')
+        const occurrences = countOccurrences(currentContent, args.old_string)
+        if (occurrences === 0) return {}
+        let newContent: string
+        if (args.replace_all) {
+          newContent = currentContent.split(args.old_string).join(args.new_string)
+        } else {
+          const idx = currentContent.indexOf(args.old_string)
+          newContent = currentContent.slice(0, idx) + args.new_string + currentContent.slice(idx + args.old_string.length)
+        }
+        return { diff: generateUnifiedDiff(args.path, currentContent, newContent) }
+      } catch {
+        return {}
+      }
+    },
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
