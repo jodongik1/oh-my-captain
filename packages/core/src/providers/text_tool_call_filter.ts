@@ -54,7 +54,7 @@ export class TextToolCallFilter {
       this.toolBuf = this.pending.slice(openIdx)
       this.pending = ''
       this.inTool = true
-      logger.warn({ trigger: this.toolBuf.slice(0, 40) }, '[TextToolCallFilter] 도구 호출 마커 감지 — 이후 토큰 억제 시작')
+      logger.warn({ trigger: this.toolBuf.slice(0, 40) }, '[TextToolCallFilter] 도구 호출 마커 감지')
       return safe
     }
 

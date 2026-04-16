@@ -115,27 +115,31 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, isBusy: action.busy }
 
     case 'STREAM_TOKEN': {
-      // 마지막 stream 엔트리에 토큰 추가 (없으면 새로 생성)
+      // [흐름 7-b] App.tsx의 stream_chunk 핸들러로부터 호출됨
+      // LLM이 토큰을 스트리밍할 때마다 이 reducer가 실행되어 타임라인을 실시간 갱신
       const last = state.timeline[state.timeline.length - 1]
       if (last?.type === 'stream' && last.isStreaming) {
+        // 이미 스트리밍 중인 엔트리가 있으면 content에 토큰을 누적 (새 엔트리 생성 안 함)
         const updated = { ...last, content: (last.content ?? '') + action.token }
         return { ...state, timeline: [...state.timeline.slice(0, -1), updated] }
       }
+      // 스트리밍 엔트리가 없으면 새 stream 엔트리를 생성하여 타임라인에 추가
       return {
         ...state,
         isBusy: true,
         timeline: [...state.timeline, {
           id: Date.now().toString(),
           type: 'stream',
-          source: action.source,
+          source: action.source,  // 'chat' | 'action' (코드 액션 구분용)
           content: action.token,
-          isStreaming: true,
+          isStreaming: true,       // 스트리밍 진행 중 플래그 (완료 후 false로 전환)
           timestamp: Date.now()
         }]
       }
     }
 
     case 'STREAM_END': {
+      // [흐름 7-c] stream_end 수신 → 마지막 stream 엔트리의 isStreaming을 false로 전환하고 isBusy 해제
       const last = state.timeline[state.timeline.length - 1]
       if (last?.type === 'stream') {
         const updated = { ...last, isStreaming: false }

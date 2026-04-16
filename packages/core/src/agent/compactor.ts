@@ -16,6 +16,9 @@
 
 import type { LLMProvider, Message } from '../providers/types.js'
 import { estimateTokens } from './loop.js'
+import { makeLogger } from '../utils/logger.js'
+
+const log = makeLogger('Compactor')
 
 // ── 임계값 (contextWindow 대비 비율) ──
 const TIER1_THRESHOLD = 0.75
@@ -146,21 +149,21 @@ export async function compactMessages(
   // ── Tier 1 ──
   let compacted = tier1TrimToolOutputs(messages)
   if (totalTokens(compacted) / contextWindow < TIER2_THRESHOLD) {
-    console.error(`[Compactor] Tier 1 적용: ${tokens} → ${totalTokens(compacted)} tokens`)
+    log.info(`Tier 1 적용: ${tokens} → ${totalTokens(compacted)} tokens`)
     return { messages: compacted, tier: 1 }
   }
 
   // ── Tier 2 ──
   try {
     compacted = await tier2Summarize(compacted, provider)
-    console.error(`[Compactor] Tier 2 적용: ${tokens} → ${totalTokens(compacted)} tokens`)
+    log.info(`Tier 2 적용: ${tokens} → ${totalTokens(compacted)} tokens`)
     return { messages: compacted, tier: 2 }
   } catch (e) {
-    console.warn('[Compactor] Tier 2 실패, Tier 3로 fallback:', e)
+    log.warn('Tier 2 실패, Tier 3로 fallback:', e)
   }
 
   // ── Tier 3 ──
   compacted = tier3HardReset(messages)
-  console.error(`[Compactor] Tier 3 적용 (비상 잘라내기): ${tokens} → ${totalTokens(compacted)} tokens`)
+  log.warn(`Tier 3 적용 (비상 잘라내기): ${tokens} → ${totalTokens(compacted)} tokens`)
   return { messages: compacted, tier: 3 }
 }

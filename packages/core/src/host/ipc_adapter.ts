@@ -35,6 +35,9 @@ export class IpcHostAdapter implements HostAdapter {
     send({ id: nanoid(), type: 'safety_snapshot', payload: { path } })
   }
 
+  // [흐름 6-emit] loop.ts / executeSingleTool에서 호출
+  // stream_chunk, tool_start, tool_result, stream_end 등 모든 UI 이벤트를
+  // ipc/server.ts의 send()를 통해 Node.js stdout → Kotlin → React로 전달
   emit(type: string, payload: unknown): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     send({ id: nanoid(), type: type as any, payload } as any)

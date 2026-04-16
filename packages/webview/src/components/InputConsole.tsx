@@ -63,9 +63,12 @@ export default function InputConsole({
       onModeChange(MODES[(idx + 1) % MODES.length])
       return
     }
+    // [흐름 1] Enter 입력 → onSend 호출 → App.tsx의 handleSend로 이어짐
+    // Shift+Enter는 줄바꿈, 슬래시 팝업/액션 메뉴 열려있으면 전송 억제
     if (e.key === 'Enter' && !e.shiftKey && !slashFilter && !showActionMenu) {
       e.preventDefault()
       if (text.trim() && !isBusy) {
+        console.log('[InputConsole] Sending message:', text.trim())
         onSend(text.trim())
         setText('')
         onSlashFilterChange(null)
@@ -208,6 +211,7 @@ export default function InputConsole({
               <button
                 className={`send-btn mode-${mode}`}
                 disabled={!text.trim() || isBusy}
+                // [흐름 1-버튼] 전송 버튼 클릭도 동일하게 onSend 호출
                 onClick={() => {
                   if (text.trim()) { onSend(text.trim()); setText('') }
                 }}

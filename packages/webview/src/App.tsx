@@ -23,20 +23,24 @@ function CompassIcon() {
 export default function App() {
   const [state, dispatch] = useAppStore()
 
-  // Core → React 메시지 수신
+  // [흐름 7] Core(Node.js) → Kotlin → Bridge → React 메시지 수신 등록
+  // onHostMessage는 jcef.ts의 window.__omcBridge.onMessage 콜백으로부터 이벤트를 받음
   useEffect(() => {
     let currentSource: 'chat' | 'action' = 'chat'
 
     return onHostMessage((msg) => {
       switch (msg.type) {
+        // [흐름 7-a] LLM 스트리밍 시작 알림 → 현재 응답 출처(chat/action) 기록
         case 'stream_start':
           currentSource = (msg.payload as { source: 'chat' | 'action' }).source
           break
 
+        // [흐름 7-b] LLM 토큰 청크 수신 → store의 STREAM_TOKEN reducer로 타임라인에 누적
         case 'stream_chunk':
           dispatch({ type: 'STREAM_TOKEN', token: (msg.payload as { token: string }).token, source: currentSource })
           break
 
+        // [흐름 7-c] 스트리밍 완료 → isBusy 해제, isStreaming 플래그 제거
         case 'stream_end':
           dispatch({ type: 'STREAM_END' })
           break
@@ -166,12 +170,15 @@ export default function App() {
     })
   }, [dispatch])
 
+  // [흐름 2] InputConsole의 onSend 콜백 → Bridge를 통해 Core로 메시지 전달
   const handleSend = useCallback((text: string) => {
+    // 타임라인에 사용자 메시지를 즉시 추가 (낙관적 업데이트)
     dispatch({
       type: 'ADD_TIMELINE',
       entry: { id: Date.now().toString(), type: 'user', content: text, timestamp: Date.now() }
     })
     dispatch({ type: 'SET_BUSY', busy: true })
+    // [흐름 3] jcef.ts sendToHost → window.__omcBridge.send → Kotlin → Node.js stdin
     sendToHost({ type: 'user_message', payload: { text, sessionId: state.sessionId ?? undefined } })
   }, [dispatch, state.sessionId])
 

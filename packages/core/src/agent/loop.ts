@@ -12,6 +12,7 @@ import * as toolRegistry from '../tools/registry.js'
 import { buildSystemPrompt } from './context.js'
 import { compactMessages } from './compactor.js'
 import { loadMemory, trimMemoryForContext } from './memory.js'
+import { makeLogger } from '../utils/logger.js'
 import type { HostAdapter } from '../host/interface.js'
 import type { LLMProvider, Message, OllamaToolCall } from '../providers/types.js'
 import type { CaptainSettings } from '../settings/types.js'
@@ -19,6 +20,8 @@ import osName from 'os-name'
 import defaultShell from 'default-shell'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
+
+const log = makeLogger('Core')
 
 const MAX_ITERATIONS = Infinity
 
@@ -49,6 +52,8 @@ export function injectSteering(text: string) {
 
 // ── Main Loop ────────────────────────────────────────────────
 
+// [흐름 6] main.ts의 user_message 핸들러에서 호출
+// LLM 호출 → 도구 실행 → 재호출 사이클을 반복하는 핵심 에이전트 루프
 export async function runLoop(input: RunLoopInput): Promise<string | null> {
   abortController = new AbortController()
   const signal = abortController.signal
@@ -56,23 +61,25 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
 
   let finalContent: string | null = null
 
-  console.error('[Core Trace] Loop 1. Starting context gathering')
+  log.debug('Loop 1. Starting context gathering')
   try {
-    // 컨텍스트 조립
+    // IDE에서 현재 열린 파일 목록을 컨텍스트로 수집 (IpcHostAdapter → Kotlin → IDE)
     const openFiles = await host.getOpenFiles().catch((e) => {
-      console.error('[Core Trace] host.getOpenFiles error:', e)
+      log.error('host.getOpenFiles error:', e)
       return []
     })
-    console.error('[Core Trace] Loop 2. Got open files:', openFiles.length)
+    log.debug('Loop 2. Got open files:', openFiles.length)
 
     const rulesPath = join(host.getProjectRoot(), '.captain', 'rules.md')
     const rules = await readFile(rulesPath, 'utf-8').catch(() => '')
 
-    // 메모리 로드
+    // 프로젝트 메모리 로드 (이전 대화 요약 등)
     const rawMemory = await loadMemory(host.getProjectRoot())
     const memory = trimMemoryForContext(rawMemory, 8000)
-    console.error('[Core Trace] Loop 3. Context fully assembled, memory:', rawMemory.length, 'chars')
+    log.debug('Loop 3. Context fully assembled, memory:', rawMemory.length, 'chars')
 
+    // 첫 번째 LLM 호출용 메시지 배열 구성:
+    // [system prompt] + [이전 대화 히스토리] + [현재 사용자 메시지]
     const messages: Message[] = [
       {
         role: 'system',
@@ -93,17 +100,20 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
 
     let iterations = 0
 
+    // 도구 호출이 없는 최종 응답이 올 때까지 LLM ↔ 도구 사이클을 반복
     while (iterations++ < MAX_ITERATIONS) {
       if (signal.aborted) break
 
       // ── 스티어링 큐 처리 ──
+      // 실행 중 사용자가 추가 지시를 주입한 경우 메시지에 삽입
       while (steeringQueue.length > 0) {
         const injected = steeringQueue.shift()!
-        console.error('[Core Trace] Steering inject:', injected)
+        log.debug('Steering inject:', injected)
         messages.push({ role: 'user', content: `[User Steering] ${injected}` })
       }
 
       // ── 3-Tier 압축 ──
+      // 컨텍스트 윈도우 초과 시 오래된 메시지를 요약하여 압축
       const beforeTokens = totalTokens(messages)
       const compacted = await compactMessages(
         messages,
@@ -117,16 +127,19 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
           beforeTokens,
           afterTokens,
         })
-        // messages 배열을 교체
+        // messages 배열을 압축된 버전으로 교체
         messages.length = 0
         messages.push(...compacted.messages)
       }
 
       // ── LLM 스트리밍 호출 ──
       let response
-      console.error('[Core Trace] Loop 4. Sending to provider (iteration', iterations, ')')
+      log.debug('Loop 4. Sending to provider (iteration', iterations, ')')
+      // UI에 스트리밍 시작 알림 → App.tsx의 stream_start 핸들러 실행
       host.emit('stream_start', { source: 'chat' })
       try {
+        // [흐름 6-a] provider.stream() → Ollama/OpenAI/Anthropic HTTP 스트리밍
+        // onChunk 콜백: 토큰 수신마다 host.emit('stream_chunk') → IPC stdout → UI
         response = await provider.stream(
           messages,
           toolRegistry.getToolDefinitions(),
@@ -136,9 +149,9 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
           },
           signal
         )
-        console.error('[Core Trace] Loop 5. Provider stream resolved')
+        log.debug('Loop 5. Provider stream resolved')
       } catch (e: any) {
-        console.error('[Core Trace] Loop X. Provider stream error:', e)
+        log.error('Loop provider stream error:', e)
         if (signal.aborted) break
         const message = e?.name === 'TimeoutError' || e?.message?.includes('timed out')
           ? `LLM 응답 타임아웃. Ollama가 실행 중인지 확인하세요.`
@@ -147,21 +160,26 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
         break
       }
 
+      // 스트리밍 완료 알림 → App.tsx의 stream_end 핸들러 → STREAM_END reducer → isBusy 해제
       host.emit('stream_end', {})
 
-      if (!response.tool_calls?.length) {  // 도구 없음 → 완료
+      if (!response.tool_calls?.length) {
+        // 도구 호출 없음 → 최종 답변. 루프 종료
         finalContent = typeof response.content === 'string' ? response.content : null
         break
       }
 
+      // 도구 호출이 있으면 assistant 메시지를 히스토리에 추가
       messages.push(response)
 
       // ── 도구 실행 (병렬/직렬 자동 분류) ──
+      // [흐름 6-b] concurrencySafe 도구는 병렬, 쓰기/터미널 도구는 직렬 실행
+      // 실행 결과는 tool role 메시지로 messages에 추가 → 다음 LLM 호출 컨텍스트로 전달
       await dispatchTools(response.tool_calls, messages, host, signal)
 
       if (signal.aborted) break
 
-      // ── 컨텍스트 사용량 UI 전달 ──
+      // 도구 실행 후 현재 컨텍스트 토큰 사용량을 UI에 전달
       const usedTokens = totalTokens(messages)
       const maxTokens = input.settings.model.contextWindow
       host.emit('context_usage', {
@@ -188,13 +206,16 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
  * - concurrencySafe: false → 직렬 실행 필수 (write_file, edit_file, run_terminal)
  * - 병렬 그룹을 먼저 모두 처리한 후, 직렬 그룹을 순서대로 처리
  */
+// [흐름 6-b] LLM이 반환한 tool_calls를 병렬/직렬로 분류해 실행
+// 실행 결과를 messages에 tool role로 추가 → 다음 루프 iteration에서 LLM 컨텍스트로 전달
 async function dispatchTools(
   calls: OllamaToolCall[],
   messages: Message[],
   host: HostAdapter,
   signal: AbortSignal
 ): Promise<void> {
-  // 병렬/직렬 분류
+  // concurrencySafe 여부로 병렬/직렬 분류
+  // 읽기 전용(read_file, grep 등)은 병렬, 파일 쓰기/터미널은 직렬
   const parallel: OllamaToolCall[] = []
   const serial: OllamaToolCall[] = []
 
@@ -209,7 +230,7 @@ async function dispatchTools(
 
   // ── 1. 병렬 실행 ──
   if (parallel.length > 0) {
-    console.error(`[Core Trace] Dispatching ${parallel.length} tools in parallel`)
+    log.debug(`Dispatching ${parallel.length} tools in parallel`)
     const parallelResults = await Promise.allSettled(
       parallel.map(call => executeSingleTool(call, host, signal))
     )
@@ -220,6 +241,7 @@ async function dispatchTools(
       const result = settled.status === 'fulfilled'
         ? settled.value
         : { error: (settled.reason as Error)?.message || 'Tool execution failed' }
+      // tool 결과를 messages에 추가 (다음 LLM 호출 시 컨텍스트로 포함됨)
       messages.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(result) })
     }
   }
@@ -232,7 +254,7 @@ async function dispatchTools(
   }
 }
 
-/** 단일 도구 실행 + UI 이벤트. */
+// 단일 도구 실행: UI 이벤트 발행(tool_start/tool_result) + 실제 도구 로직 호출
 async function executeSingleTool(
   call: OllamaToolCall,
   host: HostAdapter,
@@ -240,9 +262,12 @@ async function executeSingleTool(
 ): Promise<unknown> {
   if (signal.aborted) return { error: 'Aborted' }
 
+  // UI에 도구 실행 시작 알림 → App.tsx의 tool_start 핸들러 → 타임라인에 tool_start 엔트리 추가
   host.emit('tool_start', { tool: call.function.name, args: call.function.arguments })
   try {
+    // 도구 레지스트리에서 핸들러를 찾아 실행 (read_file, write_file, run_terminal 등)
     const result = await toolRegistry.dispatch(call, host, signal)
+    // UI에 도구 결과 알림 → COMPLETE_TOOL reducer → tool_start 엔트리에 result 병합
     host.emit('tool_result', { tool: call.function.name, result })
     return result
   } catch (e: any) {

@@ -19,13 +19,15 @@ export class OllamaProvider implements LLMProvider {
 
   readonly name = 'ollama'
 
+  // [흐름 6-a] loop.ts의 provider.stream() 호출 → Ollama HTTP 스트리밍 실제 실행
+  // 토큰 수신마다 onChunk 콜백 호출 → host.emit('stream_chunk') → IPC stdout → UI
   async stream(
     messages: Message[],
     tools: ToolDefinition[],
     onChunk: (chunk: StreamChunk) => void,
     signal?: AbortSignal
   ): Promise<AssistantMessage> {
-    // 외부 signal과 타임아웃을 결합
+    // 사용자 abort 신호와 타임아웃 신호를 병합 (먼저 발생하는 쪽으로 중단)
     const timeoutMs = this.config.requestTimeoutMs || 120_000
     const timeoutSignal = AbortSignal.timeout(timeoutMs)
     const effectiveSignal = signal
@@ -39,6 +41,7 @@ export class OllamaProvider implements LLMProvider {
       return m
     })
 
+    // Ollama HTTP API에 스트리밍 요청 (num_ctx로 컨텍스트 윈도우 크기 지정)
     const response = await this.client.chat({
       model: this.config.model,
       messages: ollamaMessages as any,
@@ -49,22 +52,26 @@ export class OllamaProvider implements LLMProvider {
 
     let fullContent = ''
     let toolCalls: OllamaToolCall[] | undefined
+    // 일부 모델은 도구 호출을 JSON이 아닌 XML 텍스트로 반환하는데,
+    // TextToolCallFilter가 이를 감지/억제하고 구조화된 tool_calls로 변환
     const filter = new TextToolCallFilter()
 
     const abortHandler = () => response.abort()
     effectiveSignal.addEventListener('abort', abortHandler)
 
     try {
+      // 청크 단위 스트리밍 수신 루프
       for await (const chunk of response) {
         if (effectiveSignal.aborted) break
         const delta = chunk.message?.content
         if (delta) {
           fullContent += delta
-          // 도구 호출 XML을 억제하고 안전한 텍스트만 UI로 전달
+          // 도구 호출 XML 패턴 감지 시 억제하고 안전한 텍스트만 UI로 전달
           const safe = filter.feed(delta)
           if (safe) onChunk({ token: safe })
         }
         if (chunk.message?.tool_calls) {
+          // 구조화된 tool_calls 수신 (Ollama가 JSON 형태로 반환한 경우)
           toolCalls = chunk.message.tool_calls.map((tc: any) => ({
             id: tc.id ?? `call_${Date.now()}`,
             function: {
@@ -75,7 +82,7 @@ export class OllamaProvider implements LLMProvider {
             }
           }))
         }
-        // 마지막 청크: abort 상태 재확인 후 로깅
+        // 마지막 청크: 컨텍스트 초과 여부 로깅
         if ((chunk as any).done && !effectiveSignal.aborted) {
           const doneReason = (chunk as any).done_reason
           const evalCount = (chunk as any).eval_count
@@ -100,17 +107,18 @@ export class OllamaProvider implements LLMProvider {
       throw e
     } finally {
       effectiveSignal.removeEventListener('abort', abortHandler)
-      // 보류된 텍스트 처리
+      // 필터 내부에 버퍼링된 잔여 텍스트 방출
       const remaining = filter.flush()
       if (remaining) onChunk({ token: remaining })
     }
 
-    // 텍스트 기반 도구 호출이 감지된 경우 structured tool_calls로 병합
+    // 텍스트에서 파싱된 도구 호출(XML 방식)이 있으면 structured tool_calls에 병합
     const textToolCalls = filter.parsedToolCalls
     if (textToolCalls.length > 0) {
       toolCalls = [...(toolCalls ?? []), ...textToolCalls]
     }
 
+    // loop.ts로 반환 → tool_calls 여부에 따라 도구 실행 또는 루프 종료 분기
     return {
       role: 'assistant',
       content: fullContent,

@@ -2,6 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { CaptainSettings, DEFAULT_SETTINGS } from './types.js'
+import { makeLogger } from '../utils/logger.js'
+
+const log = makeLogger('Settings')
 
 export interface LoadSettingsResult {
   settings: CaptainSettings
@@ -35,11 +38,11 @@ export class SettingsManager {
         },
         cachedModels: parsed.cachedModels ?? []
       }
-      console.error('[Core DEBUG] SettingsManager.load parsed JSON object:', JSON.stringify(parsed));
-      console.error('[Core DEBUG] SettingsManager.load merged result:', JSON.stringify(merged));
+      log.debug('load parsed JSON object:', JSON.stringify(parsed))
+      log.debug('load merged result:', JSON.stringify(merged))
       return { settings: merged, isFirstTime: false }
     } catch (e) {
-      console.error('[Settings] Load error, using defaults:', e)
+      log.error('Load error, using defaults:', e)
       return { settings: { ...DEFAULT_SETTINGS }, isFirstTime: true }
     }
   }
@@ -52,9 +55,9 @@ export class SettingsManager {
         fs.mkdirSync(dir, { recursive: true })
       }
       fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf-8')
-      console.error(`[Settings] Saved successfully to ${filePath}`)
+      log.info(`Saved successfully to ${filePath}`)
     } catch (e) {
-      console.error('[Settings] Save error:', e)
+      log.error('Save error:', e)
     }
   }
 }

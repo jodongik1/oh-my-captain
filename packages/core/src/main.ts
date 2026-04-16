@@ -10,13 +10,16 @@ import { SettingsManager } from './settings/manager.js'
 import * as sessionDb from './db/session.js'
 import type { LLMProvider, Message } from './providers/types.js'
 import type { InitPayload, CaptainSettings } from './ipc/protocol.js'
+import { makeLogger } from './utils/logger.js'
+
+const log = makeLogger('Core')
 
 // 프로세스 크래시 방지
 process.on('unhandledRejection', (reason) => {
-  console.error('[Core] Unhandled rejection:', reason)
+  log.error('Unhandled rejection:', reason)
 })
 process.on('uncaughtException', (err) => {
-  console.error('[Core] Uncaught exception:', err)
+  log.error('Uncaught exception:', err)
 })
 
 // ── 단일 상태 객체 ──────────────────────────────────────────
@@ -81,7 +84,7 @@ import './tools/memory_tool.js'
 
 // ── IPC 서버 시작 ────────────────────────────────────────────
 startServer(() => {
-  console.error('[Core] IPC 서버 대기 중...')
+  log.info('IPC 서버 대기 중...')
 })
 
 // ── 핸들러 등록 ──────────────────────────────────────────────
@@ -91,56 +94,59 @@ registerHandler('init', (msg) => {
   state.host = new IpcHostAdapter(payload.projectRoot, payload.mode)
   state.provider = createProvider(state.settings)
   send({ id: msg.id, type: 'ready', payload: {} })
-  console.error(`[Core] 초기화 완료: ${payload.projectRoot}, provider: ${state.settings.provider.provider}`)
+  log.info(`초기화 완료: ${payload.projectRoot}, provider: ${state.settings.provider.provider}`)
 })
 
+// [흐름 5] IPC 서버로부터 'user_message' 메시지 라우팅 진입점
 registerHandler('user_message', async (msg) => {
-  console.error('[Core Trace] 1. Received user_message:', msg.payload)
+  log.debug('1. Received user_message:', msg.payload)
   // 초기화 체크
   if (!state.host || !state.provider) {
-    console.error('[Core Trace] Core 미초기화 에러')
+    log.error('Core 미초기화 에러')
     send({ id: msg.id, type: 'error', payload: { message: 'Core가 아직 초기화되지 않았습니다.', retryable: true } })
     return
   }
-  // 중복 실행 방지
+  // 중복 실행 방지 (이전 runLoop가 아직 실행 중인 경우)
   if (state.busy) {
-    console.error('[Core Trace] Busy 상태 에러')
+    log.warn('Busy 상태 - 이전 요청 처리 중')
     send({ id: msg.id, type: 'error', payload: { message: '이전 요청을 처리 중입니다.', retryable: true } })
     return
   }
 
   const { text, sessionId } = msg.payload as { text: string; sessionId?: string }
 
-  // 세션 관리
+  // 세션이 없으면 신규 생성, 있으면 기존 세션에 이어붙임
   if (!state.sessionId) {
     state.sessionId = sessionId ?? sessionDb.createSession()
   }
   sessionDb.addMessage(state.sessionId, 'user', text)
 
   state.busy = true
-  console.error('[Core Trace] 2. Set busy flag, starting runLoop')
+  log.debug('2. Set busy flag, starting runLoop')
   try {
+    // [흐름 6] Agent Loop 실행 → LLM 스트리밍 + 도구 실행 사이클
     const assistantContent = await runLoop({
       userText: text,
-      host: state.host,
-      provider: state.provider,
+      host: state.host,       // IpcHostAdapter: 이벤트를 stdout으로 전송
+      provider: state.provider, // OllamaProvider 등: LLM HTTP 스트리밍
       history: [...state.history],
       settings: state.settings,
     })
     if (assistantContent && state.sessionId) {
       sessionDb.addMessage(state.sessionId, 'assistant', assistantContent)
     }
+    // 히스토리 누적 (다음 turn에 컨텍스트로 전달)
     state.history = [
       ...state.history,
       { role: 'user', content: text },
       ...(assistantContent ? [{ role: 'assistant' as const, content: assistantContent }] : [])
     ]
     sessionDb.autoTitle(state.sessionId)
-    console.error('[Core Trace] 3. runLoop completed successfully')
+    log.debug('3. runLoop completed successfully')
   } catch (err: any) {
-    console.error('[Core Trace] X. Error from main runLoop catch block:', err)
+    log.error('runLoop catch block:', err)
   } finally {
-    console.error('[Core Trace] 4. Releasing busy flag and sending stream_end')
+    log.debug('4. Releasing busy flag and sending stream_end')
     state.busy = false
     // stream_end 최종 보장 — runLoop 내부에서 이미 보냈어도 UI의 isBusy를 확실히 풀음
     state.host?.emit('stream_end', {})
@@ -154,13 +160,13 @@ registerHandler('abort', () => {
   state.codeActionController = null
   // busy 해제와 stream_end는 runLoop finally 블록에서 처리
   // 여기서 busy를 해제하면 runLoop가 아직 실행 중인 상태에서 새 메시지가 들어와 두 루프가 동시 실행됨
-  console.error('[Core] 사용자 중단')
+  log.info('사용자 중단')
 })
 
 registerHandler('mode_change', (msg) => {
   const { mode } = msg.payload as { mode: 'plan' | 'ask' | 'auto' }
   state.host?.setMode(mode)
-  console.error(`[Core] Mode 변경: ${mode}`)
+  log.info(`Mode 변경: ${mode}`)
 })
 
 // ── 스티어링 큐 ──────────────────────────────────────────────
@@ -169,15 +175,15 @@ registerHandler('steer_inject', (msg) => {
   const { text } = msg.payload as { text: string }
   if (state.busy) {
     injectSteering(text)
-    console.error(`[Core] 스티어링 주입: ${text.slice(0, 80)}...`)
+    log.debug(`스티어링 주입: ${text.slice(0, 80)}...`)
   } else {
-    console.error('[Core] 스티어링 무시 (루프 미실행 중)')
+    log.warn('스티어링 무시 (루프 미실행 중)')
   }
 })
 
 registerHandler('steer_interrupt', () => {
   abortLoop()
-  console.error('[Core] 스티어링 인터럽트')
+  log.info('스티어링 인터럽트')
 })
 
 // ── 세션 관리 ────────────────────────────────────────────────
@@ -223,9 +229,9 @@ registerHandler('settings_get', (msg) => {
   if (state.host) {
     state.provider = createProvider(state.settings)
   }
-  console.error(`[Core DEBUG] settings_get sending settings: ${JSON.stringify(settings)}`)
+  log.debug(`settings_get sending settings: ${JSON.stringify(settings)}`)
   send({ id: msg.id, type: 'settings_loaded', payload: { settings, isFirstTime } })
-  console.error(`[Core] 설정 로드 (provider: ${state.settings.provider.provider}, isFirstTime: ${isFirstTime})`)
+  log.info(`설정 로드 (provider: ${state.settings.provider.provider}, isFirstTime: ${isFirstTime})`)
 })
 
 registerHandler('settings_update', (msg) => {
@@ -236,7 +242,7 @@ registerHandler('settings_update', (msg) => {
   }
   SettingsManager.save(state.settings)
   send({ id: msg.id, type: 'settings_loaded', payload: { settings: state.settings, isFirstTime: false } })
-  console.error(`[Core] 설정 업데이트 및 저장완료 (provider: ${state.settings.provider.provider})`)
+  log.info(`설정 업데이트 및 저장완료 (provider: ${state.settings.provider.provider})`)
 })
 
 // ── 연결 테스트 / 모델 관리 ──────────────────────────────────
@@ -258,10 +264,10 @@ registerHandler('connection_test', async (msg) => {
     state.settings.cachedModels = modelInfos
     SettingsManager.save(state.settings)
     send({ id: msg.id, type: 'connection_test_result', payload: { success: true, models: modelInfos } })
-    console.error(`[Core] 연결 테스트 성공: ${baseUrl}, ${models.length}개 모델`)
+    log.info(`연결 테스트 성공: ${baseUrl}, ${models.length}개 모델`)
   } catch (e: any) {
     send({ id: msg.id, type: 'connection_test_result', payload: { success: false, error: e.message } })
-    console.error(`[Core] 연결 테스트 실패: ${e.message}`)
+    log.error(`연결 테스트 실패: ${e.message}`)
   }
 })
 
@@ -305,7 +311,12 @@ registerHandler('model_switch', async (msg) => {
 
 registerHandler('client_log', async (msg) => {
   const payload = msg.payload as { level: string; message: string }
-  console.error(`[Webview] ${payload.message}`)
+  const prefix =
+    payload.level === 'error' ? '[Webview:ERROR]' :
+    payload.level === 'warn'  ? '[Webview:WARN]'  :
+    payload.level === 'debug' ? '[Webview:DEBUG]' :
+                                '[Webview:INFO]'
+  console.error(`${prefix} ${payload.message}`)
 })
 
 // ── 코드 액션 ────────────────────────────────────────────────
