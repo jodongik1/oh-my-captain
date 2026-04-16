@@ -42,8 +42,8 @@ export default function App() {
           break
 
         case 'tool_start': {
-          // 도구 시작 직전 → 이전 스트림이 preamble이면 자동 제거
-          dispatch({ type: 'PRUNE_PREAMBLE' })
+          // 도구 시작 직전 → 이전 스트림을 thinking으로 변환
+          dispatch({ type: 'ELEVATE_STREAM_TO_THINKING' })
           const p = msg.payload as { tool: string; args: unknown }
           const entry: TimelineEntry = {
             id: Date.now().toString() + Math.random(),

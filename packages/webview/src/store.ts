@@ -86,6 +86,7 @@ export type AppAction =
   | { type: 'SETTINGS_LOADED'; isConfigured: boolean; settings: any }
   | { type: 'ADD_APPROVAL'; entry: TimelineEntry }
   | { type: 'RESOLVE_APPROVAL'; requestId: string; approved: boolean }
+  | { type: 'ELEVATE_STREAM_TO_THINKING' }
 
 export const initialState: AppState = {
   mode: 'ask',
@@ -308,6 +309,21 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           ...state,
           timeline: [...state.timeline.slice(0, aIdx), updated, ...state.timeline.slice(aIdx + 1)]
         }
+      }
+      return state
+    }
+
+    case 'ELEVATE_STREAM_TO_THINKING': {
+      // 도구 호출 직전의 stream 엔트리를 thinking 엔트리로 변환
+      const lastEntry = state.timeline[state.timeline.length - 1]
+      if (lastEntry?.type === 'stream' && !lastEntry.isStreaming && lastEntry.content?.trim()) {
+        const thinkingEntry: TimelineEntry = {
+          ...lastEntry,
+          type: 'thinking',
+          durationMs: Date.now() - lastEntry.timestamp,
+          isActive: false,
+        }
+        return { ...state, timeline: [...state.timeline.slice(0, -1), thinkingEntry] }
       }
       return state
     }

@@ -27,8 +27,8 @@ dependencies {
         testFramework(TestFrameworkType.Platform)
     }
     // Gson: IntelliJ Platform에 번들되어 있지만 컴파일 시 명시 필요
-    implementation("com.google.code.gson:gson:2.10.1")
-    testImplementation("org.junit.jupiter:junit-jupiter:5.10.0")
+    implementation("com.google.code.gson:gson:2.11.0")
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
 }
 
 // ── pnpm 경로 탐색 ──────────────────────────────────────────────
@@ -103,12 +103,15 @@ tasks.withType<org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask> {
     val homeDir = System.getProperty("user.home")
     val today = LocalDate.now().toString()
     val logDir = File("$homeDir/.oh-my-captain/logs/$today")
-    if (!logDir.exists()) {
-        logDir.mkdirs()
+
+    doFirst {
+        if (!logDir.exists()) {
+            logDir.mkdirs()
+        }
     }
 
     val jcefLogLevel = project.findProperty("jcefLogLevel")?.toString() ?: "warning"
-    
+
     // JCEF 로그를 지정된 디렉터리로 라우팅 (IDE 네이티브)
     systemProperty("ide.browser.jcef.log.path", "${logDir.absolutePath}/jcef.log")
     systemProperty("ide.browser.jcef.log.level", jcefLogLevel)

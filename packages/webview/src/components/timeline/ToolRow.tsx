@@ -128,14 +128,14 @@ export default function ToolRow({ tool, args, result, isActive, startedAt }: Too
     if (typeof r === 'string') return <span>{r}</span>
 
     // diff 렌더링 (edit_file 결과)
-    if (r.diff) return <DiffView diff={r.diff} />
+    if (r.diff) return <DiffView diff={r.diff} defaultExpanded={true} />
 
     if (r.output) return <span>{r.output}</span>
     if (r.error) return <span className="error-text">{r.error}</span>
     return <span>{JSON.stringify(r)}</span>
   }
 
-  const hasOutputContent = result && (typeof result === 'string' || (result as any).output || (result as any).error)
+  const hasOutputContent = result && (typeof result === 'string' || (result as any).output || (result as any).error || (result as any).diff)
 
   return (
     <div className={`tool-block tool-${getToolClass()} ${result && (result as any).error ? 'failed' : ''}`}>
