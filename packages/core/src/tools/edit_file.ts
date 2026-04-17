@@ -8,9 +8,11 @@ import type { HostAdapter } from '../host/interface.js'
 
 const argsSchema = z.object({
   path: z.string().describe('편집할 파일 경로'),
-  old_string: z.string().describe('교체 대상 기존 코드 블록 (정확 매칭)'),
+  old_string: z.string().optional().describe('교체 대상 기존 코드 블록 (정확 매칭). startLine/endLine 사용 시 불필요'),
   new_string: z.string().describe('교체할 새 코드 블록'),
   replace_all: z.boolean().optional().default(false).describe('true면 모든 매칭을 교체, false면 첫 번째만'),
+  startLine: z.number().optional().describe('교체 시작 라인 (1-indexed, read_file 출력 번호 기준)'),
+  endLine: z.number().optional().describe('교체 종료 라인 (1-indexed, 포함)'),
 })
 
 // 최근 read된 파일을 추적하는 stale-write guard
@@ -27,21 +29,32 @@ registerTool(
     type: 'function',
     function: {
       name: 'edit_file',
-      description: `파일의 특정 부분을 정밀하게 편집합니다. old_string을 찾아 new_string으로 교체합니다.
-주의:
-- 반드시 먼저 read_file로 파일을 읽은 후 사용하세요.
+      description: `파일의 특정 부분을 정밀하게 편집합니다. 두 가지 방식을 지원합니다.
+
+[방식 1] 라인 번호 방식 (권장): startLine + endLine + new_string
+- read_file 출력의 라인 번호를 그대로 사용하세요.
+- old_string 매칭 오류 없이 안정적으로 동작합니다.
+
+[방식 2] old_string 방식: old_string + new_string
 - old_string은 파일 내용과 정확히 일치해야 합니다 (공백/들여쓰기 포함).
+- old_string은 최소 범위로 지정하세요. 메서드/블록 하나씩 별도 호출로 처리하고, 파일 전체나 클래스 전체를 old_string으로 사용하지 마세요.
+- 여러 메서드를 삭제·수정할 때는 edit_file을 메서드당 한 번씩 호출하세요.
 - 정확한 매칭을 위해 2-3줄의 주변 코드를 포함하세요.
+
+공통 주의사항:
+- 반드시 먼저 read_file로 파일을 읽은 후 사용하세요.
 - 새 파일 생성이나 전체 재작성은 write_file을 사용하세요.`,
       parameters: {
         type: 'object',
         properties: {
           path: { type: 'string', description: '파일 경로' },
-          old_string: { type: 'string', description: '교체 대상 기존 코드 (정확 매칭)' },
+          old_string: { type: 'string', description: '교체 대상 기존 코드 (정확 매칭). 라인 번호 방식 사용 시 불필요' },
           new_string: { type: 'string', description: '교체할 새 코드' },
-          replace_all: { type: 'boolean', description: '모든 매칭 교체 여부 (기본: false)' },
+          replace_all: { type: 'boolean', description: '모든 매칭 교체 여부 (기본: false, old_string 방식에만 적용)' },
+          startLine: { type: 'number', description: '교체 시작 라인 (1-indexed, read_file 출력 번호 기준)' },
+          endLine: { type: 'number', description: '교체 종료 라인 (1-indexed, 포함)' },
         },
-        required: ['path', 'old_string', 'new_string'],
+        required: ['path', 'new_string'],
       },
     },
     category: 'write',
@@ -51,15 +64,27 @@ registerTool(
       const absPath = isAbsolute(args.path) ? args.path : join(host.getProjectRoot(), args.path)
       try {
         const currentContent = await readFile(absPath, 'utf-8')
-        const occurrences = countOccurrences(currentContent, args.old_string)
-        if (occurrences === 0) return {}
-        let newContent: string
-        if (args.replace_all) {
-          newContent = currentContent.split(args.old_string).join(args.new_string)
-        } else {
-          const idx = currentContent.indexOf(args.old_string)
-          newContent = currentContent.slice(0, idx) + args.new_string + currentContent.slice(idx + args.old_string.length)
+        let newContent: string | undefined
+
+        if (args.startLine != null && args.endLine != null) {
+          const lines = currentContent.split('\n')
+          newContent = [
+            ...lines.slice(0, args.startLine - 1),
+            args.new_string,
+            ...lines.slice(args.endLine),
+          ].join('\n')
+        } else if (args.old_string != null) {
+          const occurrences = countOccurrences(currentContent, args.old_string)
+          if (occurrences === 0) return {}
+          if (args.replace_all) {
+            newContent = currentContent.split(args.old_string).join(args.new_string)
+          } else {
+            const idx = currentContent.indexOf(args.old_string)
+            newContent = currentContent.slice(0, idx) + args.new_string + currentContent.slice(idx + args.old_string.length)
+          }
         }
+
+        if (newContent == null) return {}
         return { diff: generateUnifiedDiff(args.path, currentContent, newContent) }
       } catch {
         return {}
@@ -72,7 +97,7 @@ registerTool(
       ? args.path
       : join(host.getProjectRoot(), args.path)
 
-    logger.info({ path: args.path, absPath, replace_all: args.replace_all }, '[edit_file] 시작')
+    logger.info({ path: args.path, absPath, mode: args.startLine != null ? 'line-range' : 'old_string' }, '[edit_file] 시작')
 
     // 현재 파일 내용 읽기
     let currentContent: string
@@ -87,7 +112,6 @@ registerTool(
     // Stale-write guard: read_file로 읽은 후 외부에서 변경되었는지 확인
     const cached = readCache.get(absPath)
 
-    // read_file을 먼저 호출했는지 확인
     if (!cached) {
       logger.warn({ path: args.path }, '[edit_file] read_file 없이 직접 호출됨')
       return {
@@ -96,7 +120,6 @@ registerTool(
       }
     }
 
-    // TTL 초과 확인
     const cacheAge = Date.now() - cached.timestamp
     if (cacheAge > CACHE_TTL_MS) {
       logger.warn({ path: args.path, cacheAgeMs: cacheAge, ttlMs: CACHE_TTL_MS }, '[edit_file] 캐시 TTL 초과')
@@ -107,7 +130,6 @@ registerTool(
       }
     }
 
-    // 외부 수정 감지
     if (cached.content !== currentContent) {
       logger.warn({ path: args.path }, '[edit_file] 외부 파일 수정 감지')
       readCache.set(absPath, { content: currentContent, timestamp: Date.now() })
@@ -119,13 +141,53 @@ registerTool(
 
     logger.debug({ path: args.path }, '[edit_file] guard 검사 통과')
 
-    // old_string 매칭 검증
-    const occurrences = countOccurrences(currentContent, args.old_string)
-    logger.debug({ path: args.path, occurrences, oldStringLength: args.old_string.length }, '[edit_file] 매칭 개수')
+    // ── 방식 1: 라인 번호 기반 교체 ──
+    if (args.startLine != null && args.endLine != null) {
+      const lines = currentContent.split('\n')
+      if (args.startLine < 1 || args.endLine > lines.length || args.startLine > args.endLine) {
+        return { error: `라인 번호 범위 오류: 파일은 ${lines.length}줄입니다. (startLine=${args.startLine}, endLine=${args.endLine})` }
+      }
+      logger.info({ path: args.path, startLine: args.startLine, endLine: args.endLine }, '[edit_file] 라인 번호 방식 교체')
+      await host.triggerSafetySnapshot(absPath)
+      const newContent = [
+        ...lines.slice(0, args.startLine - 1),
+        args.new_string,
+        ...lines.slice(args.endLine),
+      ].join('\n')
+      await writeFile(absPath, newContent, 'utf-8')
+      readCache.set(absPath, { content: newContent, timestamp: Date.now() })
+      const diff = generateUnifiedDiff(args.path, currentContent, newContent)
+      const linesChanged = diff.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length
+      logger.info({ path: args.path, linesChanged }, '[edit_file] 완료 (라인 번호 방식)')
+      return { path: args.path, replacements: 1, diff, linesChanged }
+    }
+
+    // ── 방식 2: old_string 매칭 ──
+    if (args.old_string == null) {
+      return { error: 'startLine/endLine 또는 old_string 중 하나를 반드시 제공해야 합니다.' }
+    }
+
+    const oldStr = args.old_string
+    const occurrences = countOccurrences(currentContent, oldStr)
+    logger.debug({ path: args.path, occurrences, oldStringLength: oldStr.length }, '[edit_file] 매칭 개수')
 
     if (occurrences === 0) {
-      // A. 정규화 폴백: \r\n 정규화 → trailing whitespace 제거 순으로 재시도
-      const fallback = tryNormalizedMatch(currentContent, args.old_string, args.new_string, args.replace_all ?? false)
+      const oldFirstLine = oldStr.split('\n')[0]
+      logger.warn({
+        path: args.path,
+        oldStringLength: oldStr.length,
+        oldStringLines: oldStr.split('\n').length,
+        oldStringPreview: oldStr.slice(0, 300),
+        hasCRLF: oldStr.includes('\r\n'),
+        hasTrailingSpace: oldStr.split('\n').some(l => l !== l.trimEnd()),
+        fileHasCRLF: currentContent.includes('\r\n'),
+        firstLineFoundInFile: currentContent.includes(oldFirstLine),
+        firstLineTrimFoundInFile: currentContent.includes(oldFirstLine.trim()),
+      }, '[edit_file] old_string 매칭 실패 진단')
+
+      const { result: fallback, diagnostics } = tryNormalizedMatch(currentContent, oldStr, args.new_string, args.replace_all ?? false)
+      logger.warn({ path: args.path, diagnostics }, '[edit_file] 폴백 전략 결과')
+
       if (fallback) {
         logger.info({ path: args.path, strategy: fallback.strategy }, '[edit_file] 정규화 폴백으로 매칭 성공')
         await host.triggerSafetySnapshot(absPath)
@@ -137,12 +199,17 @@ registerTool(
         return { path: args.path, replacements: 1, diff, linesChanged, fallbackStrategy: fallback.strategy }
       }
 
-      // B. 근접 라인 힌트: old_string 첫 줄과 가장 유사한 파일 구간 반환
       logger.warn({ path: args.path }, '[edit_file] old_string을 찾을 수 없음')
-      const nearestLines = findNearestLines(currentContent, args.old_string)
+      const nearestLines = findNearestLines(currentContent, oldStr)
+      logger.warn({
+        oldFirstLine,
+        oldFirstLineCharCodes: [...oldFirstLine].slice(0, 20).map(c => c.charCodeAt(0)),
+        nearestFileLine: nearestLines?.split('\n')[0] ?? '(없음)',
+      }, '[edit_file] old_string 첫 줄 비교')
+
       return {
         error: 'old_string을 파일에서 찾을 수 없습니다. 공백/들여쓰기를 포함하여 정확히 입력하세요.',
-        hint: 'read_file로 파일을 다시 읽고 정확한 코드 블록을 확인하세요.',
+        hint: 'read_file로 파일을 다시 읽고 정확한 코드 블록을 확인하세요. 또는 startLine/endLine 방식을 사용하세요.',
         ...(nearestLines ? { nearestMatch: nearestLines } : {}),
       }
     }
@@ -154,19 +221,17 @@ registerTool(
       }
     }
 
-    // 변경 전 스냅샷
     await host.triggerSafetySnapshot(absPath)
     logger.debug({ path: args.path }, '[edit_file] safety snapshot 생성')
 
-    // 교체 실행
     let newContent: string
     if (args.replace_all) {
       logger.info({ path: args.path, occurrences }, '[edit_file] 전체 교체 실행')
-      newContent = currentContent.split(args.old_string).join(args.new_string)
+      newContent = currentContent.split(oldStr).join(args.new_string)
     } else {
       logger.info({ path: args.path }, '[edit_file] 첫 번째 매칭만 교체')
-      const idx = currentContent.indexOf(args.old_string)
-      newContent = currentContent.slice(0, idx) + args.new_string + currentContent.slice(idx + args.old_string.length)
+      const idx = currentContent.indexOf(oldStr)
+      newContent = currentContent.slice(0, idx) + args.new_string + currentContent.slice(idx + oldStr.length)
     }
 
     try {
@@ -177,13 +242,10 @@ registerTool(
       throw e
     }
 
-    // 캐시 업데이트
     readCache.set(absPath, { content: newContent, timestamp: Date.now() })
 
-    // diff 생성
     const diff = generateUnifiedDiff(args.path, currentContent, newContent)
     const linesChanged = diff.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length
-
     logger.info({ path: args.path, linesChanged, replacements: args.replace_all ? occurrences : 1 }, '[edit_file] 완료')
 
     return {
@@ -211,19 +273,25 @@ function tryNormalizedMatch(
   oldStr: string,
   newStr: string,
   replaceAll: boolean
-): { newContent: string; strategy: string } | null {
+): { result: { newContent: string; strategy: string } | null; diagnostics: string[] } {
   const strategies: Array<{ name: string; normalize: (s: string) => string }> = [
     { name: 'crlf', normalize: s => s.replace(/\r\n/g, '\n') },
     { name: 'trailing-whitespace', normalize: s => s.replace(/\r\n/g, '\n').split('\n').map(l => l.trimEnd()).join('\n') },
   ]
+
+  const diagnostics: string[] = []
 
   for (const { name, normalize } of strategies) {
     const normContent = normalize(content)
     const normOld = normalize(oldStr)
     const normNew = normalize(newStr)
 
-    if (!normContent.includes(normOld)) continue
+    if (!normContent.includes(normOld)) {
+      diagnostics.push(`${name}: not matched`)
+      continue
+    }
 
+    diagnostics.push(`${name}: matched`)
     let newContent: string
     if (replaceAll) {
       newContent = normContent.split(normOld).join(normNew)
@@ -231,9 +299,9 @@ function tryNormalizedMatch(
       const idx = normContent.indexOf(normOld)
       newContent = normContent.slice(0, idx) + normNew + normContent.slice(idx + normOld.length)
     }
-    return { newContent, strategy: name }
+    return { result: { newContent, strategy: name }, diagnostics }
   }
-  return null
+  return { result: null, diagnostics }
 }
 
 /** B. old_string 첫 줄과 가장 유사한 파일 구간을 반환 (LLM 재시도 힌트용) */
@@ -252,7 +320,6 @@ function findNearestLines(content: string, oldStr: string): string | null {
     const firstLine = fileLines[i].trim()
     if (!firstLine.includes(searchFirstLine) && !searchFirstLine.includes(firstLine)) continue
 
-    // 첫 줄이 유사한 구간의 전체 유사도 계산
     let score = 0
     for (let j = 0; j < windowSize; j++) {
       if (fileLines[i + j]?.trim() === searchLines[j]?.trim()) score++

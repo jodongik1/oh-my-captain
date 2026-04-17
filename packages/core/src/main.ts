@@ -81,6 +81,7 @@ import './tools/read_file.js'
 import './tools/write_file.js'
 import './tools/run_terminal.js'
 import './tools/memory_tool.js'
+import './tools/edit_symbol.js'
 
 // ── IPC 서버 시작 ────────────────────────────────────────────
 startServer(() => {

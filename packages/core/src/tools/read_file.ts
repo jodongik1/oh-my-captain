@@ -40,17 +40,19 @@ registerTool(
     // edit_file의 stale-write guard에 등록
     markFileRead(absPath, content)
 
+    const lines = content.split('\n')
     if (args.startLine || args.endLine) {
-      const lines = content.split('\n')
       const start = (args.startLine ?? 1) - 1
       const end = args.endLine ?? lines.length
+      const numbered = lines.slice(start, end).map((l, i) => `${start + i + 1}: ${l}`).join('\n')
       return {
         path: args.path,
-        content: lines.slice(start, end).join('\n'),
+        content: numbered,
         totalLines: lines.length,
         range: { start: start + 1, end },
       }
     }
-    return { path: args.path, content, totalLines: content.split('\n').length }
+    const numbered = lines.map((l, i) => `${i + 1}: ${l}`).join('\n')
+    return { path: args.path, content: numbered, totalLines: lines.length }
   }
 )
