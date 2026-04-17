@@ -80,7 +80,7 @@ export async function dispatch(
         risk: tool.definition.category === 'destructive' ? 'high' : 'medium',
         details: approvalDetails,
       })
-      if (!approved) return { error: '사용자가 거부했습니다.' }
+      if (!approved) return { error: '사용자가 거부했습니다.', __userRejected: true }
       break
     }
     case 'allow':

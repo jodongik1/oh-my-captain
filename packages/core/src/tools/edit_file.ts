@@ -124,10 +124,26 @@ registerTool(
     logger.debug({ path: args.path, occurrences, oldStringLength: args.old_string.length }, '[edit_file] 매칭 개수')
 
     if (occurrences === 0) {
+      // A. 정규화 폴백: \r\n 정규화 → trailing whitespace 제거 순으로 재시도
+      const fallback = tryNormalizedMatch(currentContent, args.old_string, args.new_string, args.replace_all ?? false)
+      if (fallback) {
+        logger.info({ path: args.path, strategy: fallback.strategy }, '[edit_file] 정규화 폴백으로 매칭 성공')
+        await host.triggerSafetySnapshot(absPath)
+        await writeFile(absPath, fallback.newContent, 'utf-8')
+        readCache.set(absPath, { content: fallback.newContent, timestamp: Date.now() })
+        const diff = generateUnifiedDiff(args.path, currentContent, fallback.newContent)
+        const linesChanged = diff.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length
+        logger.info({ path: args.path, linesChanged, strategy: fallback.strategy }, '[edit_file] 완료 (폴백)')
+        return { path: args.path, replacements: 1, diff, linesChanged, fallbackStrategy: fallback.strategy }
+      }
+
+      // B. 근접 라인 힌트: old_string 첫 줄과 가장 유사한 파일 구간 반환
       logger.warn({ path: args.path }, '[edit_file] old_string을 찾을 수 없음')
+      const nearestLines = findNearestLines(currentContent, args.old_string)
       return {
         error: 'old_string을 파일에서 찾을 수 없습니다. 공백/들여쓰기를 포함하여 정확히 입력하세요.',
-        hint: '파일을 다시 read_file로 읽고 정확한 코드 블록을 확인하세요.',
+        hint: 'read_file로 파일을 다시 읽고 정확한 코드 블록을 확인하세요.',
+        ...(nearestLines ? { nearestMatch: nearestLines } : {}),
       }
     }
     if (occurrences > 1 && !args.replace_all) {
@@ -187,4 +203,69 @@ function countOccurrences(text: string, search: string): number {
     idx += search.length
   }
   return count
+}
+
+/** A. 정규화 폴백 매칭: \r\n 정규화 → trailing whitespace 제거 순으로 시도 */
+function tryNormalizedMatch(
+  content: string,
+  oldStr: string,
+  newStr: string,
+  replaceAll: boolean
+): { newContent: string; strategy: string } | null {
+  const strategies: Array<{ name: string; normalize: (s: string) => string }> = [
+    { name: 'crlf', normalize: s => s.replace(/\r\n/g, '\n') },
+    { name: 'trailing-whitespace', normalize: s => s.replace(/\r\n/g, '\n').split('\n').map(l => l.trimEnd()).join('\n') },
+  ]
+
+  for (const { name, normalize } of strategies) {
+    const normContent = normalize(content)
+    const normOld = normalize(oldStr)
+    const normNew = normalize(newStr)
+
+    if (!normContent.includes(normOld)) continue
+
+    let newContent: string
+    if (replaceAll) {
+      newContent = normContent.split(normOld).join(normNew)
+    } else {
+      const idx = normContent.indexOf(normOld)
+      newContent = normContent.slice(0, idx) + normNew + normContent.slice(idx + normOld.length)
+    }
+    return { newContent, strategy: name }
+  }
+  return null
+}
+
+/** B. old_string 첫 줄과 가장 유사한 파일 구간을 반환 (LLM 재시도 힌트용) */
+function findNearestLines(content: string, oldStr: string): string | null {
+  const searchFirstLine = oldStr.split('\n')[0].trim()
+  if (!searchFirstLine) return null
+
+  const fileLines = content.split('\n')
+  const searchLines = oldStr.split('\n')
+  const windowSize = searchLines.length
+
+  let bestScore = 0
+  let bestIdx = -1
+
+  for (let i = 0; i <= fileLines.length - windowSize; i++) {
+    const firstLine = fileLines[i].trim()
+    if (!firstLine.includes(searchFirstLine) && !searchFirstLine.includes(firstLine)) continue
+
+    // 첫 줄이 유사한 구간의 전체 유사도 계산
+    let score = 0
+    for (let j = 0; j < windowSize; j++) {
+      if (fileLines[i + j]?.trim() === searchLines[j]?.trim()) score++
+    }
+    if (score > bestScore) {
+      bestScore = score
+      bestIdx = i
+    }
+  }
+
+  if (bestIdx === -1) return null
+
+  const start = Math.max(0, bestIdx - 1)
+  const end = Math.min(fileLines.length, bestIdx + windowSize + 1)
+  return fileLines.slice(start, end).join('\n')
 }

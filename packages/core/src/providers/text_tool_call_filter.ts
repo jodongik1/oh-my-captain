@@ -15,8 +15,11 @@
 import type { OllamaToolCall } from './types.js'
 import { logger } from '../utils/logger.js'
 
-// 도구 호출이 시작될 수 있는 마커
-const OPEN_MARKERS = ['<tool_call>', '<function=']
+// 도구 호출이 시작될 수 있는 마커 (공백 포함 변형도 지원)
+const OPEN_MARKERS = ['<tool_call>', '<function=', '< function=', '<function =']
+
+// 도구 호출 잔여 닫힘 태그 (마커 없이 단독으로 나타나는 경우 필터링)
+const CLOSE_ONLY_TAGS = ['</tool_call>', '</function>']
 
 export class TextToolCallFilter {
   private pending = ''      // 도구 호출 시작일 수 있어서 보류 중인 텍스트
@@ -64,6 +67,14 @@ export class TextToolCallFilter {
       const safe = this.pending.slice(0, partialIdx)
       this.pending = this.pending.slice(partialIdx)
       return safe
+    }
+
+    // 고아 닫힘 태그(</tool_call>, </function>) 제거
+    for (const tag of CLOSE_ONLY_TAGS) {
+      if (this.pending.includes(tag)) {
+        logger.warn({ tag }, '[TextToolCallFilter] 고아 닫힘 태그 제거')
+        this.pending = this.pending.split(tag).join('')
+      }
     }
 
     const safe = this.pending

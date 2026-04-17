@@ -118,10 +118,13 @@ export class OllamaProvider implements LLMProvider {
       toolCalls = [...(toolCalls ?? []), ...textToolCalls]
     }
 
+    // 안전망: fullContent에 남아 있는 XML 도구 호출 패턴을 제거 (UI 노출 방지)
+    const safeContent = stripToolCallXml(fullContent)
+
     // loop.ts로 반환 → tool_calls 여부에 따라 도구 실행 또는 루프 종료 분기
     return {
       role: 'assistant',
-      content: fullContent,
+      content: safeContent,
       tool_calls: toolCalls
     }
   }
@@ -135,6 +138,16 @@ export class OllamaProvider implements LLMProvider {
     })
     return response.message.content
   }
+}
+
+/** fullContent에서 XML 도구 호출 패턴을 제거합니다. */
+function stripToolCallXml(text: string): string {
+  return text
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '')
+    .replace(/<\s*function\s*=\s*\w+[\s\S]*?<\/function>/g, '')
+    .replace(/<\/tool_call>/g, '')
+    .replace(/<\/function>/g, '')
+    .trimEnd()
 }
 
 // 설정 화면의 Model 드롭다운에 채울 모델 목록 조회

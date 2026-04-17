@@ -169,11 +169,11 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
         const hasToolsInHistory = messages.some(m => m.role === 'tool')
         if (!hasToolsInHistory && !noToolRetried) {
           noToolRetried = true
-          log.debug('Loop: no tools called, injecting retry steering')
+          log.debug('Loop: no tools called, injecting self-judgment retry steering')
           messages.push(response)
           messages.push({
             role: 'user',
-            content: '도구를 사용하여 실제로 파일을 수정해주세요. 코드를 텍스트로 설명하지 말고, read_file로 파일을 읽은 뒤 edit_file 또는 write_file로 직접 변경을 수행하세요.',
+            content: '앞의 요청이 실제 파일 변경(코드 추가·수정·삭제)을 원하는 것이라면, read_file로 파일을 읽은 뒤 edit_file 또는 write_file로 직접 수정해주세요. 설명이나 질문 답변이 목적이었다면 이전 응답으로 충분하니 추가 작업은 필요 없습니다.',
           })
           continue
         }
@@ -191,6 +191,14 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
       await dispatchTools(response.tool_calls, messages, host, signal)
 
       if (signal.aborted) break
+
+      // 사용자가 도구 사용을 거부한 경우 즉시 루프 종료
+      const userRejected = messages.some(m => {
+        if (m.role !== 'tool') return false
+        try { return (JSON.parse(m.content as string) as any).__userRejected === true } catch { return false }
+      })
+      if (userRejected) break
+
 
       // 도구 실행 후 현재 컨텍스트 토큰 사용량을 UI에 전달
       const usedTokens = totalTokens(messages)
@@ -291,6 +299,7 @@ async function executeSingleTool(
 }
 
 // ── Utilities ────────────────────────────────────────────────
+
 
 /** 토큰 추정 (1 토큰 ≈ 4 글자 근사치). */
 export function estimateTokens(text: string): number {
