@@ -5,6 +5,23 @@
     "build:core": "pnpm --filter @omc/core build",
     "build:webview": "pnpm --filter @omc/webview build",
     "dev:webview": "pnpm --filter @omc/webview dev",
-    "build:all": "pnpm run build:core && pnpm run build:webview"
+    "build:all": "pnpm run build:core && pnpm run build:webview",
+    "test": "pnpm -r --if-present test",
+    "test:run": "pnpm -r --if-present test:run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.5.0",
+    "prettier": "^3.8.3",
+    "typescript-eslint": "^8.59.0"
   }
 }

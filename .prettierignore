@@ -1,0 +1,9 @@
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+hosts/intellij/src/main/resources/
+hosts/intellij/build/
+pnpm-lock.yaml
+.captain/
+.oh-my-captain/

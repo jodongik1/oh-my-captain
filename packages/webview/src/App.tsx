@@ -1,13 +1,14 @@
-import { useEffect, useCallback } from 'react'
+import { useCallback } from 'react'
 import { useAppStore } from './store'
-import { onHostMessage, sendToHost } from './bridge/jcef'
+import { sendToHost } from './bridge/jcef'
+import { useIpcMessageHandler } from './bridge/ipc/useIpcMessageHandler'
 import HeaderBar from './components/HeaderBar'
 import Timeline from './components/Timeline'
 import InputConsole from './components/InputConsole'
 import HistoryPopup from './components/HistoryPopup'
 import SettingsPanel from './components/settings/SettingsPanel'
 import { Toaster } from 'sonner'
-import type { TimelineEntry, ModelInfo } from './store'
+import type { ModelInfo } from './store'
 function CompassIcon() {
   return (
     <svg width="72" height="72" viewBox="0 0 24 24" className="compass-svg" aria-hidden="true">
@@ -23,152 +24,8 @@ function CompassIcon() {
 export default function App() {
   const [state, dispatch] = useAppStore()
 
-  // [흐름 7] Core(Node.js) → Kotlin → Bridge → React 메시지 수신 등록
-  // onHostMessage는 jcef.ts의 window.__omcBridge.onMessage 콜백으로부터 이벤트를 받음
-  useEffect(() => {
-    let currentSource: 'chat' | 'action' = 'chat'
-
-    return onHostMessage((msg) => {
-      switch (msg.type) {
-        // [흐름 7-a] LLM 스트리밍 시작 알림 → 현재 응답 출처(chat/action) 기록
-        case 'stream_start':
-          currentSource = (msg.payload as { source: 'chat' | 'action' }).source
-          break
-
-        // [흐름 7-b] LLM 토큰 청크 수신 → store의 STREAM_TOKEN reducer로 타임라인에 누적
-        case 'stream_chunk':
-          dispatch({ type: 'STREAM_TOKEN', token: (msg.payload as { token: string }).token, source: currentSource })
-          break
-
-        // [흐름 7-c] 스트리밍 완료 → isBusy 해제, isStreaming 플래그 제거
-        case 'stream_end':
-          dispatch({ type: 'STREAM_END' })
-          break
-
-        case 'tool_start': {
-          // 도구 시작 직전 → 이전 스트림을 thinking으로 변환
-          dispatch({ type: 'ELEVATE_STREAM_TO_THINKING' })
-          const p = msg.payload as { tool: string; args: unknown }
-          const entry: TimelineEntry = {
-            id: Date.now().toString() + Math.random(),
-            type: 'tool_start',
-            tool: p.tool,
-            args: p.args,
-            timestamp: Date.now(),
-            isActive: true,
-            startedAt: Date.now()
-          }
-          dispatch({ type: 'ADD_TIMELINE', entry })
-          break
-        }
-
-        case 'tool_result': {
-          const p = msg.payload as { tool: string; result: unknown }
-          // tool_start entry에 result 병합 (별도 entry 생성 안함)
-          dispatch({ type: 'COMPLETE_TOOL', tool: p.tool, result: p.result })
-          break
-        }
-
-        case 'thinking_start': {
-          dispatch({
-            type: 'ADD_TIMELINE',
-            entry: {
-              id: Date.now().toString(),
-              type: 'thinking',
-              durationMs: 0,
-              isActive: true,
-              startedAt: Date.now(),
-              timestamp: Date.now()
-            }
-          })
-          break
-        }
-
-        case 'thinking_end': {
-          const p = msg.payload as { durationMs: number; content?: string }
-          dispatch({ type: 'COMPLETE_THINKING', durationMs: p.durationMs, content: p.content })
-          break
-        }
-
-        case 'context_usage':
-          dispatch({ type: 'SET_CONTEXT_USAGE', usage: msg.payload as any })
-          break
-
-        case 'error': {
-          const p = msg.payload as { message: string }
-          dispatch({ type: 'ADD_ERROR', message: p.message })
-          break
-        }
-
-        case 'sessions_list': {
-          const p = msg.payload as { sessions: any[] }
-          dispatch({ type: 'SET_SESSIONS', sessions: p.sessions })
-          break
-        }
-
-        case 'session_history': {
-          const p = msg.payload as { messages: any[] }
-          for (const m of p.messages) {
-            if (m.role === 'user') {
-              dispatch({ type: 'ADD_TIMELINE', entry: { id: m.id, type: 'user', content: m.content, timestamp: m.timestamp } })
-            } else if (m.role === 'assistant') {
-              dispatch({ type: 'ADD_TIMELINE', entry: { id: m.id, type: 'stream', content: m.content, timestamp: m.timestamp } })
-            }
-          }
-          break
-        }
-
-        case 'model_list_result': {
-          const p = msg.payload as { models: ModelInfo[]; currentModel: string }
-          dispatch({ type: 'SET_AVAILABLE_MODELS', models: p.models })
-          dispatch({ type: 'SET_MODEL', modelId: p.currentModel })
-          break
-        }
-
-        case 'model_switched': {
-          const p = msg.payload as { modelId: string; contextWindow: number }
-          dispatch({ type: 'SET_MODEL', modelId: p.modelId, contextWindow: p.contextWindow })
-          break
-        }
-
-        case 'core_ready': {
-          sendToHost({ type: 'settings_get', payload: {} })
-          sendToHost({ type: 'session_list', payload: {} })
-          break
-        }
-
-        case 'settings_loaded': {
-          const p = msg.payload as { settings: any; isFirstTime: boolean }
-          console.error('[REACT IPC DEBUG] settings_loaded RECEIVED:', JSON.stringify(msg.payload))
-          dispatch({ type: 'SETTINGS_LOADED', isConfigured: !p.isFirstTime, settings: p.settings })
-          if (p.settings?.cachedModels?.length) {
-            dispatch({ type: 'SET_AVAILABLE_MODELS', models: p.settings.cachedModels })
-          }
-          break
-        }
-
-        case 'approval_request': {
-          const p = msg.payload as { id: string; action: string; description: string; risk: 'low' | 'medium' | 'high'; details?: unknown }
-          const requestId = p.id
-          const entry: TimelineEntry = {
-            id: requestId,
-            type: 'approval',
-            timestamp: Date.now(),
-            isActive: true,
-            approval: {
-              requestId,
-              action: p.action,
-              description: p.description,
-              risk: p.risk,
-              details: p.details,
-            },
-          }
-          dispatch({ type: 'ADD_APPROVAL', entry })
-          break
-        }
-      }
-    })
-  }, [dispatch])
+  // [흐름 7] Core → Bridge → React 메시지 라우팅. 타입별 핸들러는 bridge/ipc/handlers.ts 참고.
+  useIpcMessageHandler(dispatch)
 
   // [흐름 2] InputConsole의 onSend 콜백 → Bridge를 통해 Core로 메시지 전달
   const handleSend = useCallback((text: string) => {
