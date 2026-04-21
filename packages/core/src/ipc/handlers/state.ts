@@ -1,6 +1,6 @@
 import type { IpcHostAdapter } from '../../host/ipc_adapter.js'
 import type { LLMProvider, Message } from '../../providers/types.js'
-import type { CaptainSettings } from '../protocol.js'
+import type { CaptainSettings } from '../../settings/types.js'
 import { DEFAULT_SETTINGS } from '../../settings/types.js'
 
 export interface CoreState {
@@ -17,7 +17,7 @@ export function createState(): CoreState {
   return {
     host: null,
     provider: null,
-    settings: DEFAULT_SETTINGS as unknown as CaptainSettings,
+    settings: DEFAULT_SETTINGS,
     sessionId: null,
     history: [],
     busy: false,

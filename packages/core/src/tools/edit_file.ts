@@ -3,8 +3,10 @@ import { readFile, writeFile } from 'fs/promises'
 import { join, isAbsolute } from 'path'
 import { registerTool } from './registry.js'
 import { generateUnifiedDiff } from '../utils/diff.js'
-import { logger } from '../utils/logger.js'
+import { makeLogger } from '../utils/logger.js'
 import type { HostAdapter } from '../host/interface.js'
+
+const log = makeLogger('edit_file.ts')
 
 const argsSchema = z.object({
   path: z.string().describe('편집할 파일 경로'),
@@ -97,15 +99,15 @@ registerTool(
       ? args.path
       : join(host.getProjectRoot(), args.path)
 
-    logger.info({ path: args.path, absPath, mode: args.startLine != null ? 'line-range' : 'old_string' }, '[edit_file] 시작')
+    log.info({ path: args.path, absPath, mode: args.startLine != null ? 'line-range' : 'old_string' }, '[edit_file] 시작')
 
     // 현재 파일 내용 읽기
     let currentContent: string
     try {
       currentContent = await readFile(absPath, 'utf-8')
-      logger.debug({ path: args.path, contentLength: currentContent.length }, '[edit_file] 파일 읽기 성공')
+      log.debug({ path: args.path, contentLength: currentContent.length }, '[edit_file] 파일 읽기 성공')
     } catch (e) {
-      logger.error({ path: args.path, error: (e as Error).message }, '[edit_file] 파일 읽기 실패')
+      log.error({ path: args.path, error: (e as Error).message }, '[edit_file] 파일 읽기 실패')
       return { error: `파일을 찾을 수 없습니다: ${args.path}` }
     }
 
@@ -113,7 +115,7 @@ registerTool(
     const cached = readCache.get(absPath)
 
     if (!cached) {
-      logger.warn({ path: args.path }, '[edit_file] read_file 없이 직접 호출됨')
+      log.warn({ path: args.path }, '[edit_file] read_file 없이 직접 호출됨')
       return {
         error: 'edit_file 사용 전 반드시 read_file로 파일을 먼저 읽어야 합니다.',
         hint: 'read_file을 호출해 파일 내용을 먼저 읽고, 그 후 edit_file을 사용하세요.',
@@ -122,7 +124,7 @@ registerTool(
 
     const cacheAge = Date.now() - cached.timestamp
     if (cacheAge > CACHE_TTL_MS) {
-      logger.warn({ path: args.path, cacheAgeMs: cacheAge, ttlMs: CACHE_TTL_MS }, '[edit_file] 캐시 TTL 초과')
+      log.warn({ path: args.path, cacheAgeMs: cacheAge, ttlMs: CACHE_TTL_MS }, '[edit_file] 캐시 TTL 초과')
       readCache.delete(absPath)
       return {
         error: '캐시가 만료되었습니다. read_file로 파일을 다시 읽어주세요.',
@@ -131,7 +133,7 @@ registerTool(
     }
 
     if (cached.content !== currentContent) {
-      logger.warn({ path: args.path }, '[edit_file] 외부 파일 수정 감지')
+      log.warn({ path: args.path }, '[edit_file] 외부 파일 수정 감지')
       readCache.set(absPath, { content: currentContent, timestamp: Date.now() })
       return {
         error: '파일이 마지막 read_file 이후 변경되었습니다. 다시 read_file로 읽어주세요.',
@@ -139,7 +141,7 @@ registerTool(
       }
     }
 
-    logger.debug({ path: args.path }, '[edit_file] guard 검사 통과')
+    log.debug({ path: args.path }, '[edit_file] guard 검사 통과')
 
     // ── 방식 1: 라인 번호 기반 교체 ──
     if (args.startLine != null && args.endLine != null) {
@@ -147,7 +149,7 @@ registerTool(
       if (args.startLine < 1 || args.endLine > lines.length || args.startLine > args.endLine) {
         return { error: `라인 번호 범위 오류: 파일은 ${lines.length}줄입니다. (startLine=${args.startLine}, endLine=${args.endLine})` }
       }
-      logger.info({ path: args.path, startLine: args.startLine, endLine: args.endLine }, '[edit_file] 라인 번호 방식 교체')
+      log.info({ path: args.path, startLine: args.startLine, endLine: args.endLine }, '[edit_file] 라인 번호 방식 교체')
       await host.triggerSafetySnapshot(absPath)
       const newContent = [
         ...lines.slice(0, args.startLine - 1),
@@ -158,7 +160,7 @@ registerTool(
       readCache.set(absPath, { content: newContent, timestamp: Date.now() })
       const diff = generateUnifiedDiff(args.path, currentContent, newContent)
       const linesChanged = diff.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length
-      logger.info({ path: args.path, linesChanged }, '[edit_file] 완료 (라인 번호 방식)')
+      log.info({ path: args.path, linesChanged }, '[edit_file] 완료 (라인 번호 방식)')
       return { path: args.path, replacements: 1, diff, linesChanged }
     }
 
@@ -169,11 +171,11 @@ registerTool(
 
     const oldStr = args.old_string
     const occurrences = countOccurrences(currentContent, oldStr)
-    logger.debug({ path: args.path, occurrences, oldStringLength: oldStr.length }, '[edit_file] 매칭 개수')
+    log.debug({ path: args.path, occurrences, oldStringLength: oldStr.length }, '[edit_file] 매칭 개수')
 
     if (occurrences === 0) {
       const oldFirstLine = oldStr.split('\n')[0]
-      logger.warn({
+      log.warn({
         path: args.path,
         oldStringLength: oldStr.length,
         oldStringLines: oldStr.split('\n').length,
@@ -186,22 +188,22 @@ registerTool(
       }, '[edit_file] old_string 매칭 실패 진단')
 
       const { result: fallback, diagnostics } = tryNormalizedMatch(currentContent, oldStr, args.new_string, args.replace_all ?? false)
-      logger.warn({ path: args.path, diagnostics }, '[edit_file] 폴백 전략 결과')
+      log.warn({ path: args.path, diagnostics }, '[edit_file] 폴백 전략 결과')
 
       if (fallback) {
-        logger.info({ path: args.path, strategy: fallback.strategy }, '[edit_file] 정규화 폴백으로 매칭 성공')
+        log.info({ path: args.path, strategy: fallback.strategy }, '[edit_file] 정규화 폴백으로 매칭 성공')
         await host.triggerSafetySnapshot(absPath)
         await writeFile(absPath, fallback.newContent, 'utf-8')
         readCache.set(absPath, { content: fallback.newContent, timestamp: Date.now() })
         const diff = generateUnifiedDiff(args.path, currentContent, fallback.newContent)
         const linesChanged = diff.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length
-        logger.info({ path: args.path, linesChanged, strategy: fallback.strategy }, '[edit_file] 완료 (폴백)')
+        log.info({ path: args.path, linesChanged, strategy: fallback.strategy }, '[edit_file] 완료 (폴백)')
         return { path: args.path, replacements: 1, diff, linesChanged, fallbackStrategy: fallback.strategy }
       }
 
-      logger.warn({ path: args.path }, '[edit_file] old_string을 찾을 수 없음')
+      log.warn({ path: args.path }, '[edit_file] old_string을 찾을 수 없음')
       const nearestLines = findNearestLines(currentContent, oldStr)
-      logger.warn({
+      log.warn({
         oldFirstLine,
         oldFirstLineCharCodes: [...oldFirstLine].slice(0, 20).map(c => c.charCodeAt(0)),
         nearestFileLine: nearestLines?.split('\n')[0] ?? '(없음)',
@@ -214,7 +216,7 @@ registerTool(
       }
     }
     if (occurrences > 1 && !args.replace_all) {
-      logger.warn({ path: args.path, occurrences }, '[edit_file] 중복 매칭')
+      log.warn({ path: args.path, occurrences }, '[edit_file] 중복 매칭')
       return {
         error: `old_string이 ${occurrences}개 매칭됩니다. replace_all: true로 모두 교체하거나 더 많은 주변 코드를 포함하세요.`,
         occurrences,
@@ -222,23 +224,23 @@ registerTool(
     }
 
     await host.triggerSafetySnapshot(absPath)
-    logger.debug({ path: args.path }, '[edit_file] safety snapshot 생성')
+    log.debug({ path: args.path }, '[edit_file] safety snapshot 생성')
 
     let newContent: string
     if (args.replace_all) {
-      logger.info({ path: args.path, occurrences }, '[edit_file] 전체 교체 실행')
+      log.info({ path: args.path, occurrences }, '[edit_file] 전체 교체 실행')
       newContent = currentContent.split(oldStr).join(args.new_string)
     } else {
-      logger.info({ path: args.path }, '[edit_file] 첫 번째 매칭만 교체')
+      log.info({ path: args.path }, '[edit_file] 첫 번째 매칭만 교체')
       const idx = currentContent.indexOf(oldStr)
       newContent = currentContent.slice(0, idx) + args.new_string + currentContent.slice(idx + oldStr.length)
     }
 
     try {
       await writeFile(absPath, newContent, 'utf-8')
-      logger.info({ path: args.path, newContentLength: newContent.length }, '[edit_file] 파일 쓰기 성공')
+      log.info({ path: args.path, newContentLength: newContent.length }, '[edit_file] 파일 쓰기 성공')
     } catch (e) {
-      logger.error({ path: args.path, error: (e as Error).message }, '[edit_file] 파일 쓰기 실패')
+      log.error({ path: args.path, error: (e as Error).message }, '[edit_file] 파일 쓰기 실패')
       throw e
     }
 
@@ -246,7 +248,7 @@ registerTool(
 
     const diff = generateUnifiedDiff(args.path, currentContent, newContent)
     const linesChanged = diff.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length
-    logger.info({ path: args.path, linesChanged, replacements: args.replace_all ? occurrences : 1 }, '[edit_file] 완료')
+    log.info({ path: args.path, linesChanged, replacements: args.replace_all ? occurrences : 1 }, '[edit_file] 완료')
 
     return {
       path: args.path,

@@ -9,6 +9,10 @@
  *   5. Runtime prompt (host.requestApproval)
  */
 
+import { makeLogger } from '../utils/logger.js'
+
+const log = makeLogger('permissions.ts')
+
 export type ToolCategory = 'readonly' | 'write' | 'destructive'
 export type PermissionDecision = 'allow' | 'deny' | 'prompt'
 
@@ -90,13 +94,16 @@ export function resolvePermission(
   // 현재는 skip
 
   // ── Step 5: 최종 결정 반환 ──
+  if (decision !== 'allow') {
+    log.debug(`권한 결정: tool=${toolName} category=${category} mode=${mode} → ${decision}`)
+  }
   return decision
 }
 
 /**
  * 권한 거부 시 반환할 결과를 생성합니다.
  */
-export function buildDeniedResult(toolName: string, mode: string): Record<string, unknown> {
+export function buildDeniedResult(toolName: string, mode: string): { denied: boolean; tool: string; mode: string; reason: string; suggestion: string } {
   return {
     denied: true,
     tool: toolName,

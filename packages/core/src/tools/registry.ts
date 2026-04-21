@@ -1,5 +1,5 @@
 import type { HostAdapter } from '../host/interface.js'
-import type { OllamaToolCall } from '../providers/types.js'
+import type { ToolCall } from '../providers/types.js'
 import { resolvePermission, buildDeniedResult, formatApprovalDescription } from './permissions.js'
 import type { ToolCategory } from './permissions.js'
 
@@ -39,7 +39,7 @@ export function getToolDef(name: string): ToolDefinition | undefined {
  * - allow → 바로 실행
  */
 export async function dispatch(
-  call: OllamaToolCall,
+  call: ToolCall,
   host: HostAdapter,
   _signal?: AbortSignal
 ): Promise<unknown> {

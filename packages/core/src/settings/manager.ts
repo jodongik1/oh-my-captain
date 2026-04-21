@@ -4,7 +4,7 @@ import os from 'os'
 import { CaptainSettings, DEFAULT_SETTINGS } from './types.js'
 import { makeLogger } from '../utils/logger.js'
 
-const log = makeLogger('Settings')
+const log = makeLogger('manager.ts')
 
 export interface LoadSettingsResult {
   settings: CaptainSettings
@@ -25,7 +25,7 @@ export class SettingsManager {
       }
       const fileData = fs.readFileSync(filePath, 'utf-8')
       const parsed = JSON.parse(fileData) as Partial<CaptainSettings>
-      
+
       // Merge with defaults to ensure schema consistency
       const merged: CaptainSettings = {
         provider: {
@@ -38,11 +38,10 @@ export class SettingsManager {
         },
         cachedModels: parsed.cachedModels ?? []
       }
-      log.debug('load parsed JSON object:', JSON.stringify(parsed))
-      log.debug('load merged result:', JSON.stringify(merged))
+      log.info("\n", merged)
       return { settings: merged, isFirstTime: false }
     } catch (e) {
-      log.error('Load error, using defaults:', e)
+      log.error('Load error, using defaults:\n', e)
       return { settings: { ...DEFAULT_SETTINGS }, isFirstTime: true }
     }
   }

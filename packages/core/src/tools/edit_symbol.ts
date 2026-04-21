@@ -5,7 +5,9 @@ import { registerTool } from './registry.js'
 import { generateUnifiedDiff } from '../utils/diff.js'
 import { getParserForFile, getSupportedExtensions } from '../utils/tree_sitter.js'
 import { markFileRead } from './edit_file.js'
-import { logger } from '../utils/logger.js'
+import { makeLogger } from '../utils/logger.js'
+
+const log = makeLogger('edit_symbol.ts')
 import type { HostAdapter } from '../host/interface.js'
 import type Parser from 'web-tree-sitter'
 
@@ -90,7 +92,7 @@ registerTool(
     const args = argsSchema.parse(rawArgs)
     const absPath = isAbsolute(args.path) ? args.path : join(host.getProjectRoot(), args.path)
 
-    logger.info({ path: args.path, symbolName: args.symbolName, symbolType: args.symbolType }, '[edit_symbol] 시작')
+    log.info({ path: args.path, symbolName: args.symbolName, symbolType: args.symbolType }, '[edit_symbol] 시작')
 
     let currentContent: string
     try {
@@ -103,14 +105,14 @@ registerTool(
 
     if (!range) {
       const supported = getSupportedExtensions().join(', ')
-      logger.warn({ path: args.path, symbolName: args.symbolName }, '[edit_symbol] 심볼을 찾을 수 없음')
+      log.warn({ path: args.path, symbolName: args.symbolName }, '[edit_symbol] 심볼을 찾을 수 없음')
       return {
         error: `심볼 '${args.symbolName}'을 찾을 수 없습니다.`,
         hint: `지원 언어: ${supported}. 심볼 이름과 파일 경로를 확인하세요. 찾지 못하면 edit_file의 startLine/endLine 방식을 사용하세요.`,
       }
     }
 
-    logger.info({ path: args.path, symbolName: args.symbolName, startIndex: range.startIndex, endIndex: range.endIndex }, '[edit_symbol] 심볼 발견')
+    log.info({ path: args.path, symbolName: args.symbolName, startIndex: range.startIndex, endIndex: range.endIndex }, '[edit_symbol] 심볼 발견')
 
     await host.triggerSafetySnapshot(absPath)
     const newContent = currentContent.slice(0, range.startIndex) + args.new_string + currentContent.slice(range.endIndex)
@@ -118,7 +120,7 @@ registerTool(
     try {
       await writeFile(absPath, newContent, 'utf-8')
     } catch (e) {
-      logger.error({ path: args.path, error: (e as Error).message }, '[edit_symbol] 파일 쓰기 실패')
+      log.error({ path: args.path, error: (e as Error).message }, '[edit_symbol] 파일 쓰기 실패')
       throw e
     }
 
@@ -126,7 +128,7 @@ registerTool(
 
     const diff = generateUnifiedDiff(args.path, currentContent, newContent)
     const linesChanged = diff.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length
-    logger.info({ path: args.path, linesChanged }, '[edit_symbol] 완료')
+    log.info({ path: args.path, linesChanged }, '[edit_symbol] 완료')
 
     return { path: args.path, symbolName: args.symbolName, diff, linesChanged }
   }

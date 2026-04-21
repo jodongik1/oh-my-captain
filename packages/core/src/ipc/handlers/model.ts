@@ -5,7 +5,7 @@ import { makeLogger } from '../../utils/logger.js'
 import type { CoreState } from './state.js'
 import { applySettings } from './provider_factory.js'
 
-const log = makeLogger('Core')
+const log = makeLogger('model.ts')
 
 export function registerModelHandlers(state: CoreState) {
   registerHandler('connection_test', async (msg) => {

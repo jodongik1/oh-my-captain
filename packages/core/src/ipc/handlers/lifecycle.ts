@@ -5,7 +5,7 @@ import type { InitPayload } from '../protocol.js'
 import type { CoreState } from './state.js'
 import { createProvider } from './provider_factory.js'
 
-const log = makeLogger('Core')
+const log = makeLogger('lifecycle.ts')
 
 export function registerLifecycleHandlers(state: CoreState) {
   registerHandler('init', (msg) => {

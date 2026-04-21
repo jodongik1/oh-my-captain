@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { LLMProvider, Message, StreamChunk, AssistantMessage, OllamaToolCall } from './types.js'
+import type { LLMProvider, Message, StreamChunk, AssistantMessage, ToolCall } from './types.js'
 import type { ToolDefinition } from '../tools/registry.js'
 
 export class AnthropicProvider implements LLMProvider {
@@ -80,7 +80,7 @@ export class AnthropicProvider implements LLMProvider {
     }
 
     let fullContent = ''
-    const toolCalls: OllamaToolCall[] = []
+    const toolCalls: ToolCall[] = []
 
     stream.on('text', (text) => {
       fullContent += text

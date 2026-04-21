@@ -65,12 +65,16 @@ export type CoreMessage =
   | { id: string; type: 'models_list';       payload: { models: string[] } }
   // ── 세션 관리 ──
   | { id: string; type: 'sessions_list';     payload: { sessions: SessionSummary[] } }
-  | { id: string; type: 'session_history';   payload: { sessionId: string; messages: Message[] } }
+  | { id: string; type: 'session_history';   payload: { sessionId: string; messages: SessionMessage[] } }
   // ── 연결 테스트 ──
   | { id: string; type: 'connection_test_result'; payload: { success: boolean; models?: ModelInfo[]; error?: string } }
   // ── 모델 선택 ──
   | { id: string; type: 'model_list_result'; payload: { models: ModelInfo[]; currentModel: string } }
   | { id: string; type: 'model_switched';    payload: { modelId: string; contextWindow: number } }
+
+// ── 설정 (정규 정의는 settings/types.ts) ──
+export type { CaptainSettings, ProviderSettings, ModelSettings } from '../settings/types.js'
+import type { CaptainSettings } from '../settings/types.js'
 
 export interface ModelInfo {
   id: string
@@ -117,6 +121,7 @@ export interface Diagnostic {
   line: number
 }
 
+/** UI/세션 표시용 세션 요약 정보 */
 export interface SessionSummary {
   id: string
   title: string
@@ -125,28 +130,11 @@ export interface SessionSummary {
   preview: string
 }
 
-export interface Message {
+/** UI/세션 표시용 메시지 (providers/types.ts의 Message와 구별) */
+export interface SessionMessage {
   id: string
   role: 'user' | 'assistant' | 'tool'
   content: string
   timestamp: number
 }
 
-export interface CaptainSettings {
-  provider: {
-    provider: 'ollama' | 'openai' | 'anthropic'
-    ollamaBaseUrl: string
-    ollamaApiKey: string
-    ollamaModel: string
-    openAiApiKey: string
-    openAiModel: string
-    openAiBaseUrl: string
-    anthropicApiKey: string
-    anthropicModel: string
-  }
-  model: {
-    contextWindow: number
-    requestTimeoutMs: number
-  }
-  cachedModels?: ModelInfo[]
-}

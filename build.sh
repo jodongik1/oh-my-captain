@@ -232,6 +232,7 @@ show_help() {
     echo ""
     echo -e "${BOLD}사용법:${NC}"
     echo -e "  ${CYAN}./build.sh${NC}              전체 빌드 후 IntelliJ 실행 (기본값)"
+    echo -e "  ${CYAN}./build.sh dev${NC}          개발 모드 (Vite Dev Server + Core Watch + HMR)"
     echo -e "  ${CYAN}./build.sh build${NC}        Core + Webview 빌드만"
     echo -e "  ${CYAN}./build.sh run${NC}          실행만 (이전 빌드 결과 사용)"
     echo -e "  ${CYAN}./build.sh core${NC}         Core만 빌드"
@@ -289,6 +290,34 @@ case "$CMD" in
         CURRENT_STEP=0
         check_prerequisites
         run_ide
+        ;;
+    dev)
+        TOTAL_STEPS=2
+        CURRENT_STEP=0
+        check_prerequisites
+        install_deps
+
+        header "개발 모드 시작 (Vite Dev + Core Watch + Run IDE)"
+        
+        log "1. 초기 Core 빌드 (NPM Install 포함) - Race Condition 방지..."
+        build_core
+
+        log "2. Vite Dev 서버 고아 프로세스 정리 (포트 5173)..."
+        lsof -ti:5173 | xargs kill -9 2>/dev/null || true
+
+        log "3. Vite Dev 서버 시작..."
+        (cd "$ROOT_DIR/packages/webview" && pnpm run dev) &
+        VITE_PID=$!
+
+        log "4. Core esbuild Watch 시작..."
+        (cd "$ROOT_DIR/packages/core" && SKIP_CORE_NPM_INSTALL=1 node scripts/bundle.mjs --watch) &
+        CORE_PID=$!
+
+        log "5. IntelliJ 플러그인 실행..."
+        # 종료 시 백그라운드 프로세스 확실한 정리 (SIGINT 포함)
+        trap "kill -TERM $VITE_PID $CORE_PID 2>/dev/null" EXIT INT TERM
+        
+        (cd "$INTELLIJ_DIR" && ./gradlew runIde -Domc.dev=true)
         ;;
     core)
         TOTAL_STEPS=1

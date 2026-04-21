@@ -1,9 +1,11 @@
-import { readFile } from 'fs/promises'
-import { join, dirname } from 'path'
+import { join } from 'path'
+import { loadPrompt } from '../utils/prompt_loader.js'
 import type { CodeActionPayload, CodeActionType } from '../ipc/protocol.js'
 import type { LLMProvider } from '../providers/types.js'
 import type { HostAdapter } from '../host/interface.js'
-import { logger } from '../utils/logger.js'
+import { makeLogger } from '../utils/logger.js'
+
+const log = makeLogger('code_action.ts')
 
 // CJS 번들에서는 __dirname이 자동 제공됨. ESM fallback 불필요.
 // (esbuild format: 'cjs' → __dirname 사용 가능)
@@ -21,20 +23,13 @@ const ACTION_FILES: Record<CodeActionType, string> = {
 }
 
 /**
- * 프롬프트 템플릿 로드 우선순위:
- * 1. .captain/prompts/{action}.md (사용자 커스터마이징)
- * 2. 내장 기본 템플릿
+ * 프롬프트 템플릿 로드 — 공통 loadPrompt 사용
  */
-async function loadPromptTemplate(
+async function loadActionPrompt(
   action: CodeActionType, projectRoot: string
 ): Promise<string> {
   const fileName = ACTION_FILES[action]
-  const customPath = join(projectRoot, '.captain', 'prompts', fileName)
-  try {
-    return await readFile(customPath, 'utf-8')
-  } catch {
-    return await readFile(join(DEFAULT_PROMPTS_DIR, fileName), 'utf-8')
-  }
+  return loadPrompt(fileName, projectRoot, DEFAULT_PROMPTS_DIR)
 }
 
 /**
@@ -60,12 +55,12 @@ export async function executeCodeAction(
   host: HostAdapter,
   signal?: AbortSignal
 ): Promise<void> {
-  const template = await loadPromptTemplate(payload.action, host.getProjectRoot())
+  const template = await loadActionPrompt(payload.action, host.getProjectRoot())
   const prompt = renderTemplate(template, payload, host.getProjectRoot())
 
   const promptChars = prompt.length
   const approxPromptTokens = Math.ceil(promptChars / 4)
-  logger.info({ action: payload.action, filePath: payload.filePath, lineRange: payload.lineRange, promptChars, approxPromptTokens }, '[Action] 스트림 시작')
+  log.info({ action: payload.action, filePath: payload.filePath, lineRange: payload.lineRange, promptChars, approxPromptTokens }, '[Action] 스트림 시작')
 
   host.emit('stream_start', { source: 'action' })
   host.emit('stream_chunk', { token: '' })
@@ -94,7 +89,7 @@ export async function executeCodeAction(
       signal
     )
 
-    logger.info({ action: payload.action, chunkCount, responseChars, approxResponseTokens: Math.ceil(responseChars / 4) }, '[Action] 스트림 완료')
+    log.info({ action: payload.action, chunkCount, responseChars, approxResponseTokens: Math.ceil(responseChars / 4) }, '[Action] 스트림 완료')
 
     // improve 액션의 경우 응답에서 코드 블록을 추출하여 diff 표시
     if (payload.action === 'improve' && response.content) {
@@ -114,7 +109,7 @@ export async function executeCodeAction(
   } catch (e: any) {
     if (signal?.aborted) return
     const isTimeout = e?.code === 'TIMEOUT'
-    logger.error({ action: payload.action, error: e?.message, isTimeout }, '[Action] 스트림 오류')
+    log.error({ action: payload.action, error: e?.message, isTimeout }, '[Action] 스트림 오류')
     host.emit('stream_chunk', { token: `\n\n---\n⚠️ **${e?.message ?? '알 수 없는 오류가 발생했습니다.'}**` })
   }
 

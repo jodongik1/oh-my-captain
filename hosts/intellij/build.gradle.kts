@@ -110,10 +110,23 @@ tasks.withType<org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask> {
         }
     }
 
+     // 개발자 도구 활성화 (우클릭 메뉴)
+    systemProperty("ide.browser.jcef.contextMenu.devTools.enabled", "true")
+
+    /**
+     * 로그 레벨
+     * verbose, info, warning, error, fatal, disable
+     */
     val jcefLogLevel = project.findProperty("jcefLogLevel")?.toString() ?: "warning"
 
     // JCEF 로그를 지정된 디렉터리로 라우팅 (IDE 네이티브)
     systemProperty("ide.browser.jcef.log.path", "${logDir.absolutePath}/jcef.log")
     systemProperty("ide.browser.jcef.log.level", jcefLogLevel)
+
+    // omc.dev 프로퍼티 전달 (개발 모드 식별)
+    val omcDev = System.getProperty("omc.dev")
+    if (omcDev != null) {
+        systemProperty("omc.dev", omcDev)
+    }
 }
 

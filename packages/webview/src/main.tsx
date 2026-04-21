@@ -8,28 +8,50 @@ function serializeArgs(args: unknown[]): string {
   return args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
 }
 
+function getCallerInfo(): string {
+  const err = new Error()
+  if (err.stack) {
+    const lines = err.stack.split('\n')
+    const callerLine = lines[3]
+    if (callerLine) {
+      const match = callerLine.match(/(?:at\s+|@)(.*?):(\d+):(\d+)/)
+      if (match) {
+        let file = match[1].split(/[\\/]/).pop() || 'unknown'
+        // Vite dev server URL format 처리 (e.g. http://localhost:5173/src/bridge/ipc/handlers.ts?t=...)
+        file = file.split('?')[0]
+        return `[${file}]`
+      }
+    }
+  }
+  return '[unknown]'
+}
+
 const originalError = console.error
 console.error = (...args) => {
   originalError(...args)
-  sendToHost({ type: 'client_log', payload: { level: 'error', message: serializeArgs(args) } })
+  const caller = getCallerInfo()
+  sendToHost({ type: 'client_log', payload: { level: 'error', message: `${caller} ${serializeArgs(args)}` } })
 }
 
 const originalWarn = console.warn
 console.warn = (...args) => {
   originalWarn(...args)
-  sendToHost({ type: 'client_log', payload: { level: 'warn', message: serializeArgs(args) } })
+  const caller = getCallerInfo()
+  sendToHost({ type: 'client_log', payload: { level: 'warn', message: `${caller} ${serializeArgs(args)}` } })
 }
 
 const originalLog = console.log
 console.log = (...args) => {
   originalLog(...args)
-  sendToHost({ type: 'client_log', payload: { level: 'info', message: serializeArgs(args) } })
+  const caller = getCallerInfo()
+  sendToHost({ type: 'client_log', payload: { level: 'info', message: `${caller} ${serializeArgs(args)}` } })
 }
 
 const originalDebug = console.debug
 console.debug = (...args) => {
   originalDebug(...args)
-  sendToHost({ type: 'client_log', payload: { level: 'debug', message: serializeArgs(args) } })
+  const caller = getCallerInfo()
+  sendToHost({ type: 'client_log', payload: { level: 'debug', message: `${caller} ${serializeArgs(args)}` } })
 }
 
 // 처리되지 않은 Promise 거부도 IntelliJ 로그에 전달

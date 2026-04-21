@@ -122,7 +122,7 @@ export function createIpcHandlers(ctx: IpcHandlerCtx): IpcHandlerMap {
     },
     settings_loaded: (payload) => {
       const p = payload as { settings: any; isFirstTime: boolean }
-      console.error('[REACT IPC DEBUG] settings_loaded RECEIVED:', JSON.stringify(payload))
+      console.log('[REACT IPC DEBUG] settings_loaded RECEIVED:', JSON.stringify(payload))
       dispatch({ type: 'SETTINGS_LOADED', isConfigured: !p.isFirstTime, settings: p.settings })
       if (p.settings?.cachedModels?.length) {
         dispatch({ type: 'SET_AVAILABLE_MODELS', models: p.settings.cachedModels })

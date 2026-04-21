@@ -3,7 +3,10 @@ import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join, isAbsolute, dirname } from 'path'
 import { registerTool } from './registry.js'
 import { generateUnifiedDiff } from '../utils/diff.js'
+import { makeLogger } from '../utils/logger.js'
 import type { HostAdapter } from '../host/interface.js'
+
+const log = makeLogger('write_file.ts')
 
 const argsSchema = z.object({
   path: z.string().describe('쓸 파일의 경로'),
@@ -43,6 +46,7 @@ registerTool(
 
     await mkdir(dirname(absPath), { recursive: true })
     await writeFile(absPath, args.content, 'utf-8')
+    log.info(`파일 쓰기 완료: ${args.path} (${args.content.split('\n').length}줄, isNew=${originalContent === ''})`)
 
     const diff = generateUnifiedDiff(args.path, originalContent, args.content)
 

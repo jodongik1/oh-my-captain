@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import type { LLMProvider, Message, StreamChunk, AssistantMessage, OllamaToolCall } from './types.js'
+import type { LLMProvider, Message, StreamChunk, AssistantMessage, ToolCall } from './types.js'
 import type { ToolDefinition } from '../tools/registry.js'
 
 export class OpenAIProvider implements LLMProvider {
@@ -101,7 +101,7 @@ export class OpenAIProvider implements LLMProvider {
       throw e
     }
 
-    const toolCalls: OllamaToolCall[] | undefined = toolCallsMap.size > 0
+    const toolCalls: ToolCall[] | undefined = toolCallsMap.size > 0
       ? Array.from(toolCallsMap.values()).map(tc => ({
           id: tc.id,
           function: {

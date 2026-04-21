@@ -3,6 +3,10 @@ import { join } from 'path'
 import { mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { nanoid } from 'nanoid'
+import { makeLogger } from '../utils/logger.js'
+import type { SessionSummary, SessionMessage } from '../ipc/protocol.js'
+
+const log = makeLogger('session_db.ts')
 
 const DB_DIR = join(homedir(), '.oh-my-captain')
 const DB_PATH = join(DB_DIR, 'sessions.db')
@@ -14,6 +18,7 @@ function getDb(): Database.Database {
   mkdirSync(DB_DIR, { recursive: true })
   db = new Database(DB_PATH)
   db.pragma('journal_mode = WAL')
+  log.info(`DB 초기화 완료: ${DB_PATH}`)
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
@@ -34,20 +39,7 @@ function getDb(): Database.Database {
   return db
 }
 
-export interface SessionSummary {
-  id: string
-  title: string
-  updatedAt: number
-  messageCount: number
-  preview: string
-}
-
-export interface SessionMessage {
-  id: string
-  role: 'user' | 'assistant' | 'tool'
-  content: string
-  timestamp: number
-}
+export type { SessionSummary, SessionMessage }
 
 export function createSession(title?: string): string {
   const id = nanoid()

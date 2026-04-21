@@ -10,14 +10,10 @@ import { registerModelHandlers } from './ipc/handlers/model.js'
 import { registerCodeActionHandlers } from './ipc/handlers/code_action.js'
 import { registerClientLogHandlers } from './ipc/handlers/client_log.js'
 
-// ── 도구 등록 (import side effect) ───────────────────────────
-import './tools/read_file.js'
-import './tools/write_file.js'
-import './tools/run_terminal.js'
-import './tools/memory_tool.js'
-import './tools/edit_symbol.js'
+// ── 도구 등록 (barrel import — 모든 도구를 일괄 등록) ──
+import './tools/index.js'
 
-const log = makeLogger('Core')
+const log = makeLogger('main.ts')
 
 // 프로세스 크래시 방지
 process.on('unhandledRejection', (reason) => {

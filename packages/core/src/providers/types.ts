@@ -2,10 +2,11 @@ import type { ToolDefinition } from '../tools/registry.js'
 
 export interface StreamChunk {
   token?: string
-  toolCalls?: OllamaToolCall[]
+  toolCalls?: ToolCall[]
 }
 
-export interface OllamaToolCall {
+/** LLM이 반환하는 도구 호출 정보 (모든 프로바이더 공통) */
+export interface ToolCall {
   id: string
   function: { name: string; arguments: Record<string, unknown> }
 }
@@ -13,7 +14,7 @@ export interface OllamaToolCall {
 export interface AssistantMessage {
   role: 'assistant'
   content: string
-  tool_calls?: OllamaToolCall[]
+  tool_calls?: ToolCall[]
 }
 
 export interface LLMProvider {
@@ -31,5 +32,5 @@ export interface LLMProvider {
 export type Message =
   | { role: 'system'; content: string }
   | { role: 'user'; content: string }
-  | { role: 'assistant'; content: string; tool_calls?: OllamaToolCall[] }
+  | { role: 'assistant'; content: string; tool_calls?: ToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string }

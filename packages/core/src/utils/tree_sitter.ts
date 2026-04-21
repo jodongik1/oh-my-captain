@@ -1,6 +1,9 @@
 import Parser from 'web-tree-sitter'
 import { createRequire } from 'module'
 import { extname } from 'path'
+import { makeLogger } from './logger.js'
+
+const log = makeLogger('tree_sitter.ts')
 
 // process.argv[1]: 개발(tsx) = 실행 스크립트, CJS 번들 = 번들 파일 경로
 // import.meta 미사용 → CJS 번들에서 빈 객체 경고 없음
@@ -39,7 +42,8 @@ export async function getParserForFile(filePath: string): Promise<Parser | null>
     const parser = new Parser()
     parser.setLanguage(lang)
     return parser
-  } catch {
+  } catch (e) {
+    log.warn(`파서 로드 실패 (lang=${langName}, path=${filePath}):`, e)
     return null
   }
 }

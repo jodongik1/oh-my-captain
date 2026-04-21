@@ -4,7 +4,7 @@ import * as sessionDb from '../../db/session.js'
 import { makeLogger } from '../../utils/logger.js'
 import type { CoreState } from './state.js'
 
-const log = makeLogger('Core')
+const log = makeLogger('chat.ts')
 
 export function registerChatHandlers(state: CoreState) {
   // [흐름 5] IPC 서버로부터 'user_message' 메시지 라우팅 진입점

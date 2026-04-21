@@ -1,23 +1,11 @@
-import { readFile } from 'fs/promises'
 import { join } from 'path'
+import { loadPrompt } from '../utils/prompt_loader.js'
 import type { FileContext } from '../ipc/protocol.js'
 import type { ToolDefinition } from '../tools/registry.js'
 
 const BUNDLED_PROMPTS_DIR = join(__dirname, 'prompts')
 
-/**
- * 프롬프트 파일 로드 우선순위:
- * 1. .captain/prompts/{file} — 사용자 커스터마이징
- * 2. 번들 내장 기본값
- */
-async function loadPrompt(fileName: string, projectRoot: string): Promise<string> {
-  const customPath = join(projectRoot, '.captain', 'prompts', fileName)
-  try {
-    return await readFile(customPath, 'utf-8')
-  } catch {
-    return await readFile(join(BUNDLED_PROMPTS_DIR, fileName), 'utf-8')
-  }
-}
+
 
 interface SystemPromptInput {
   projectRoot: string
@@ -56,10 +44,10 @@ const MODE_INSTRUCTIONS: Record<string, string> = {
 export async function buildSystemPrompt(input: SystemPromptInput): Promise<string> {
   const { projectRoot, openFiles, rules, memory, os, shell, tools, mode } = input
 
-  const template = await loadPrompt('system_prompt.md', projectRoot)
+  const template = await loadPrompt('system_prompt.md', projectRoot, BUNDLED_PROMPTS_DIR)
 
   const toolDescriptions = tools.map(t => {
-    const cat = ('category' in t) ? ` [${(t as any).category}]` : ''
+    const cat = t.category ? ` [${t.category}]` : ''
     return `### ${t.function.name}${cat}\n${t.function.description}\nParameters: ${JSON.stringify(t.function.parameters, null, 2)}`
   }).join('\n\n')
 

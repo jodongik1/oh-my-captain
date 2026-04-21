@@ -1,6 +1,6 @@
 import { request, send } from '../ipc/server.js'
 import { nanoid } from 'nanoid'
-import type { HostAdapter } from './interface.js'
+import type { HostAdapter, CoreEventMap } from './interface.js'
 import type { FileContext, ApprovalRequest } from '../ipc/protocol.js'
 
 export class IpcHostAdapter implements HostAdapter {
@@ -38,9 +38,8 @@ export class IpcHostAdapter implements HostAdapter {
   // [흐름 6-emit] loop.ts / executeSingleTool에서 호출
   // stream_chunk, tool_start, tool_result, stream_end 등 모든 UI 이벤트를
   // ipc/server.ts의 send()를 통해 Node.js stdout → Kotlin → React로 전달
-  emit(type: string, payload: unknown): void {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    send({ id: nanoid(), type: type as any, payload } as any)
+  emit<T extends keyof CoreEventMap>(type: T, payload: CoreEventMap[T]): void {
+    send({ id: nanoid(), type, payload } as any)
   }
 
   async getDiagnostics(path: string) {

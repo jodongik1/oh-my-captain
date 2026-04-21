@@ -3,7 +3,7 @@ import { abortLoop, injectSteering } from '../../agent/loop.js'
 import { makeLogger } from '../../utils/logger.js'
 import type { CoreState } from './state.js'
 
-const log = makeLogger('Core')
+const log = makeLogger('steering.ts')
 
 export function registerSteeringHandlers(state: CoreState) {
   registerHandler('steer_inject', (msg) => {

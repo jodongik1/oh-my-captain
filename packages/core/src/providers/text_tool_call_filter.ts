@@ -12,8 +12,10 @@
  *   - 스트림 종료 후 parsedToolCalls 에서 구조화된 결과를 제공
  */
 
-import type { OllamaToolCall } from './types.js'
-import { logger } from '../utils/logger.js'
+import type { ToolCall } from './types.js'
+import { makeLogger } from '../utils/logger.js'
+
+const log = makeLogger('text_tool_call_filter.ts')
 
 // 도구 호출이 시작될 수 있는 마커 (공백 포함 변형도 지원)
 const OPEN_MARKERS = ['<tool_call>', '<function=', '< function=', '<function =']
@@ -25,7 +27,7 @@ export class TextToolCallFilter {
   private pending = ''      // 도구 호출 시작일 수 있어서 보류 중인 텍스트
   private toolBuf = ''      // 도구 호출 블록 버퍼
   private inTool = false
-  readonly parsedToolCalls: OllamaToolCall[] = []
+  readonly parsedToolCalls: ToolCall[] = []
 
   /**
    * 토큰을 받아 UI에 표시할 안전한 텍스트만 반환합니다.
@@ -57,7 +59,7 @@ export class TextToolCallFilter {
       this.toolBuf = this.pending.slice(openIdx)
       this.pending = ''
       this.inTool = true
-      logger.warn({ trigger: this.toolBuf.slice(0, 40) }, '[TextToolCallFilter] 도구 호출 마커 감지')
+      log.warn(`도구 호출 마커 감지: ${this.toolBuf.slice(0, 40)}`)
       return safe
     }
 
@@ -72,7 +74,7 @@ export class TextToolCallFilter {
     // 고아 닫힘 태그(</tool_call>, </function>) 제거
     for (const tag of CLOSE_ONLY_TAGS) {
       if (this.pending.includes(tag)) {
-        logger.warn({ tag }, '[TextToolCallFilter] 고아 닫힘 태그 제거')
+        log.warn(`고아 닫힘 태그 제거: ${tag}`)
         this.pending = this.pending.split(tag).join('')
       }
     }
@@ -88,7 +90,7 @@ export class TextToolCallFilter {
    */
   flush(): string {
     if (this.inTool && this.toolBuf) {
-      logger.warn({ toolBufLength: this.toolBuf.length, toolBufPreview: this.toolBuf.slice(0, 80) }, '[TextToolCallFilter] ⚠ flush 시점에 미닫힌 도구 블록 존재 — 해당 구간 텍스트 드롭됨 (오탐 가능성)')
+      log.warn(`⚠ flush 시점에 미닫힌 도구 블록 존재 — 해당 구간 텍스트 드롭됨 (len=${this.toolBuf.length}, preview=${this.toolBuf.slice(0, 80)})`)
     }
     const leftover = this.inTool ? '' : this.pending
     this.pending = ''
@@ -131,8 +133,8 @@ function findPartialOpenEnd(text: string): number {
   return -1
 }
 
-/** 도구 호출 텍스트 한 블록을 OllamaToolCall로 변환 */
-function parseOneToolCall(text: string): OllamaToolCall | null {
+/** 도구 호출 텍스트 한 블록을 ToolCall로 변환 */
+function parseOneToolCall(text: string): ToolCall | null {
   try {
     // 포맷 1: <tool_call>{"name":"...","arguments":{...}}</tool_call>
     const jsonMatch = text.match(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/)

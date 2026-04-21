@@ -15,10 +15,10 @@
  */
 
 import type { LLMProvider, Message } from '../providers/types.js'
-import { estimateTokens } from './loop.js'
+import { totalTokens } from '../utils/tokens.js'
 import { makeLogger } from '../utils/logger.js'
 
-const log = makeLogger('Compactor')
+const log = makeLogger('compactor.ts')
 
 // ── 임계값 (contextWindow 대비 비율) ──
 const TIER1_THRESHOLD = 0.75
@@ -30,13 +30,7 @@ const TOOL_RESULT_MAX_CHARS = 2000
 // Tier 2 요약 시 보존할 최근 메시지 수
 const PRESERVE_RECENT = 5
 
-/** 메시지 배열의 총 토큰 수 추정 */
-function totalTokens(messages: Message[]): number {
-  return messages.reduce(
-    (sum, m) => sum + estimateTokens(typeof m.content === 'string' ? m.content : JSON.stringify(m)),
-    0
-  )
-}
+
 
 /**
  * Tier 1: 오래된 tool result 메시지의 대용량 출력을 축소합니다.

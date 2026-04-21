@@ -1,0 +1,13 @@
+{
+  "name": "omc-core-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "sqlite-vec": "^0.1.9",
+    "web-tree-sitter": "^0.22.6",
+    "tree-sitter-wasms": "^0.1.11",
+    "pino": "^10.3.1",
+    "pino-pretty": "^13.1.3"
+  }
+}
