@@ -40,6 +40,26 @@ export class OllamaProvider implements LLMProvider {
       return m
     })
 
+    log.debug('=== [Ollama Request] ===')
+    log.debug(`Model: ${this.config.model}`)
+    log.debug(`Messages Count: ${ollamaMessages.length}`)
+    ollamaMessages.forEach((m, idx) => {
+      log.debug(`[${idx}] Role: ${m.role}`)
+      if (m.role === 'assistant' && (m as any).tool_calls) {
+         log.debug(`  Tool Calls: ${JSON.stringify((m as any).tool_calls)}`)
+      }
+      if (m.role === 'tool') {
+         // tool 메시지인 경우 내용(결과)의 일부만 로깅하여 너무 길어지는 것 방지
+         log.debug(`  Tool Result: ${m.content.substring(0, 200)}${m.content.length > 200 ? '...' : ''}`)
+      } else {
+         log.debug(`  Content: ${m.content.substring(0, 200)}${m.content.length > 200 ? '...' : ''}`)
+      }
+    })
+    if (tools.length > 0) {
+      log.debug(`Available Tools: ${tools.map(t => t.function.name).join(', ')}`)
+    }
+    log.debug('========================')
+
     const response = await this.client.chat({
       model: this.config.model,
       messages: ollamaMessages as any,
@@ -107,6 +127,17 @@ export class OllamaProvider implements LLMProvider {
       toolCalls = [...(toolCalls ?? []), ...textToolCalls]
     }
     const safeContent = stripToolCallXml(fullContent)
+    
+    log.debug('=== [Ollama Response] ===')
+    log.debug(`Content: ${safeContent.substring(0, 200)}${safeContent.length > 200 ? '...' : ''}`)
+    if (toolCalls && toolCalls.length > 0) {
+      log.debug(`Tool Calls Requested:`)
+      toolCalls.forEach((tc, idx) => {
+        log.debug(`  [${idx}] ${tc.function.name} (${JSON.stringify(tc.function.arguments)})`)
+      })
+    }
+    log.debug('=========================')
+
     return {
       role: 'assistant',
       content: safeContent,

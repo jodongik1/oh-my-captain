@@ -14571,6 +14571,24 @@ var OllamaProvider = class {
       }
       return m2;
     });
+    log3.debug("=== [Ollama Request] ===");
+    log3.debug(`Model: ${this.config.model}`);
+    log3.debug(`Messages Count: ${ollamaMessages.length}`);
+    ollamaMessages.forEach((m2, idx) => {
+      log3.debug(`[${idx}] Role: ${m2.role}`);
+      if (m2.role === "assistant" && m2.tool_calls) {
+        log3.debug(`  Tool Calls: ${JSON.stringify(m2.tool_calls)}`);
+      }
+      if (m2.role === "tool") {
+        log3.debug(`  Tool Result: ${m2.content.substring(0, 200)}${m2.content.length > 200 ? "..." : ""}`);
+      } else {
+        log3.debug(`  Content: ${m2.content.substring(0, 200)}${m2.content.length > 200 ? "..." : ""}`);
+      }
+    });
+    if (tools2.length > 0) {
+      log3.debug(`Available Tools: ${tools2.map((t2) => t2.function.name).join(", ")}`);
+    }
+    log3.debug("========================");
     const response = await this.client.chat({
       model: this.config.model,
       messages: ollamaMessages,
@@ -14632,6 +14650,15 @@ var OllamaProvider = class {
       toolCalls = [...toolCalls ?? [], ...textToolCalls];
     }
     const safeContent = stripToolCallXml(fullContent);
+    log3.debug("=== [Ollama Response] ===");
+    log3.debug(`Content: ${safeContent.substring(0, 200)}${safeContent.length > 200 ? "..." : ""}`);
+    if (toolCalls && toolCalls.length > 0) {
+      log3.debug(`Tool Calls Requested:`);
+      toolCalls.forEach((tc, idx) => {
+        log3.debug(`  [${idx}] ${tc.function.name} (${JSON.stringify(tc.function.arguments)})`);
+      });
+    }
+    log3.debug("=========================");
     return {
       role: "assistant",
       content: safeContent,
