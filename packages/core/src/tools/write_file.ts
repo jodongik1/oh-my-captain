@@ -31,6 +31,18 @@ registerTool(
     },
     category: 'write',
     concurrencySafe: false,
+    preview: async (rawArgs, host) => {
+      const args = argsSchema.parse(rawArgs)
+      const absPath = resolveSecurePath(args.path, host.getProjectRoot())
+      let originalContent = ''
+      try {
+        originalContent = await readFile(absPath, 'utf-8')
+      } catch {
+        // 새 파일
+      }
+      const diff = generateUnifiedDiff(args.path, originalContent, args.content)
+      return { diff, isNewFile: originalContent === '' }
+    },
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
