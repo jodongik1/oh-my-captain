@@ -333,16 +333,9 @@ body {
   padding-left: 20px;
 }
 
-/* The vertical connecting track */
+/* .timeline-track-container::before 제거 (개별 entry에서 그리는 방식으로 변경) */
 .timeline-track-container::before {
-  content: '';
-  position: absolute;
-  top: 10px;
-  bottom: 0;
-  left: 27px;
-  width: 1px;
-  background-color: rgba(255, 255, 255, 0.06);
-  z-index: 1;
+  display: none;
 }
 
 /* ── Entry appear animation ── */
@@ -357,6 +350,24 @@ body {
   margin-bottom: 0;
   min-height: 28px;
   animation: entry-appear 0.25s ease-out;
+}
+
+/* 타임라인 연결 선 로직 (도트 아래에서 다음 항목까지) */
+.timeline-entry::after {
+  content: '';
+  position: absolute;
+  top: 18px; /* 도트(top: 10px, height: 8px) 바로 아래 */
+  bottom: -10px; /* 다음 항목의 도트 위치까지 연결 */
+  left: 7.5px; /* 도트 중앙 (left: 4px + 4px) */
+  width: 1px;
+  background-color: rgba(255, 255, 255, 0.08);
+  z-index: 1;
+}
+
+/* 사용자 메시지나 마지막 항목은 선을 그리지 않음 */
+.timeline-entry.entry-user::after,
+.timeline-entry:last-child::after {
+  display: none;
 }
 
 .timeline-entry.entry-user {
@@ -422,17 +433,49 @@ body {
 .user-message-block {
   background: transparent;
   border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--mode-plan);
+  /* border-left 제거 */
   border-radius: 6px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   color: var(--fg-primary);
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: break-word;
   font-size: 13.5px;
   line-height: 1.5;
-  display: block;
+  display: flex; /* 내부 아이콘 배치를 위해 flex 사용 */
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
   width: 100%;
   margin-bottom: 12px;
+  position: relative;
+}
+
+.user-message-text {
+  flex: 1;
+}
+
+.user-message-copy-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg-faint);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  margin-top: -2px;
+}
+
+.user-message-copy-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-primary);
+}
+
+.user-message-copy-btn.copied {
+  color: var(--tool-read);
 }
 
 /* ── Bash Description ── */
@@ -789,16 +832,19 @@ body {
 }
 
 .thinking-content {
-  padding: 8px 12px;
+  padding: 10px 14px;
   margin-left: 6px;
-  margin-top: 4px;
+  margin-top: 6px;
   border-left: 2px solid var(--border-subtle);
   color: var(--fg-muted);
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
-  background: rgba(255,255,255,0.02);
+  word-break: break-word; /* 긴 단어 자르기 */
+  overflow-wrap: break-word; /* 반응형 대응 */
+  background: rgba(255,255,255,0.01);
   border-radius: 4px;
+  max-width: calc(100% - 10px); /* 부모 영역 안으로 제한 */
 }
 
 /* ── Error ── */

@@ -166,8 +166,11 @@ export async function runLoop(input: RunLoopInput): Promise<RunLoopResult> {
 
       host.emit('stream_end', {})
 
+      if (typeof response.content === 'string' && response.content.length > 0) {
+        finalContent = response.content
+      }
+
       if (!response.tool_calls?.length) {
-        finalContent = typeof response.content === 'string' ? response.content : null
         break
       }
       messages.push(response)
@@ -198,7 +201,6 @@ export async function runLoop(input: RunLoopInput): Promise<RunLoopResult> {
               message: `같은 오류가 ${MAX_CONSECUTIVE_ERRORS}회 반복되어 작업을 중단합니다. 다른 방법을 시도해 주세요.`,
               retryable: true,
             })
-            finalContent = typeof response.content === 'string' ? response.content : null
             break
           }
         } else {
@@ -212,9 +214,13 @@ export async function runLoop(input: RunLoopInput): Promise<RunLoopResult> {
       }
 
       if (signal.aborted) break
-      const userRejected = messages.some(m => {
+      const currentToolResults = messages.slice(-response.tool_calls.length)
+      const userRejected = currentToolResults.some(m => {
         if (m.role !== 'tool') return false
-        try { return (JSON.parse(m.content as string) as any).__userRejected === true } catch { return false }
+        try {
+          const parsed = JSON.parse(m.content as string)
+          return parsed?.__userRejected === true
+        } catch { return false }
       })
       if (userRejected) break
 
