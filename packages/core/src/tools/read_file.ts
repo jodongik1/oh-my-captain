@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import { readFile } from 'fs/promises'
-import { join, isAbsolute } from 'path'
 import { registerTool } from './registry.js'
 import { markFileRead } from './edit_file.js'
+import { resolveSecurePath } from '../utils/path.js'
 import type { HostAdapter } from '../host/interface.js'
 
 const argsSchema = z.object({
@@ -32,9 +32,7 @@ registerTool(
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
-    const absPath = isAbsolute(args.path)
-      ? args.path
-      : join(host.getProjectRoot(), args.path)
+    const absPath = resolveSecurePath(args.path, host.getProjectRoot())
     const content = await readFile(absPath, 'utf-8')
 
     // edit_file의 stale-write guard에 등록

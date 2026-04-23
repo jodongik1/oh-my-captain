@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import { readFile, writeFile } from 'fs/promises'
-import { join, isAbsolute } from 'path'
 import { registerTool } from './registry.js'
 import { generateUnifiedDiff } from '../utils/diff.js'
+import { resolveSecurePath } from '../utils/path.js'
 import { makeLogger } from '../utils/logger.js'
 import type { HostAdapter } from '../host/interface.js'
 
@@ -63,7 +63,7 @@ registerTool(
     concurrencySafe: false,
     preview: async (rawArgs, host) => {
       const args = argsSchema.parse(rawArgs)
-      const absPath = isAbsolute(args.path) ? args.path : join(host.getProjectRoot(), args.path)
+      const absPath = resolveSecurePath(args.path, host.getProjectRoot())
       try {
         const currentContent = await readFile(absPath, 'utf-8')
         let newContent: string | undefined
@@ -95,9 +95,7 @@ registerTool(
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
-    const absPath = isAbsolute(args.path)
-      ? args.path
-      : join(host.getProjectRoot(), args.path)
+    const absPath = resolveSecurePath(args.path, host.getProjectRoot())
 
     log.info({ path: args.path, absPath, mode: args.startLine != null ? 'line-range' : 'old_string' }, '[edit_file] 시작')
 

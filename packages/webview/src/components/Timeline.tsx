@@ -43,8 +43,16 @@ export default function Timeline({ entries, isBusy, onApprovalResponse }: Timeli
         {entries.map(entry => {
           // ── Dot 상태 결정 ──
           let dotClass = 'dot-inactive'   // 기본: 회색
-          let showDot = true
+          
+          if (entry.isActive || entry.isStreaming) {
+            dotClass = 'dot-active'       // 진행 중: 파란색 깜박임
+          } else if (entry.type === 'error') {
+            dotClass = 'dot-error'        // 에러: 빨간색
+          } else if (entry.type === 'tool_result' || (entry.type === 'tool_start' && !entry.isActive)) {
+            dotClass = 'dot-success'      // 완료된 도구: 녹색
+          }
 
+          let showDot = true
           if (entry.type === 'tool_result') return null
 
           if (entry.type === 'user') {

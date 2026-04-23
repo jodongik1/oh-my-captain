@@ -7,9 +7,22 @@
 
 import type { Message } from '../providers/types.js'
 
-/** 텍스트의 토큰 수를 근사적으로 추정합니다 (1 토큰 ≈ 4 문자) */
+/**
+ * 텍스트의 토큰 수를 근사적으로 추정합니다.
+ * - 영어/일반 기호: 1 토큰 ≈ 4 문자
+ * - 한국어(한글): 1 토큰 ≈ 0.5 문자 (1글자당 약 2~2.5토큰)
+ */
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
+  if (!text) return 0
+  
+  // 한글 포함 여부를 대략적으로 확인 (성능을 위해 정규식 매칭)
+  const koreanMatches = text.match(/[가-힣]/g)
+  const koreanCount = koreanMatches ? koreanMatches.length : 0
+  const otherCount = text.length - koreanCount
+  
+  // 한국어는 글자당 약 2.2토큰, 기타는 4글자당 1토큰(0.25토큰)
+  const tokens = (koreanCount * 2.2) + (otherCount * 0.25)
+  return Math.ceil(tokens)
 }
 
 /** 메시지 배열의 총 토큰 수를 추정합니다 */

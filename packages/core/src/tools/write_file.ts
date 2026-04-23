@@ -1,8 +1,9 @@
 import { z } from 'zod'
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { join, isAbsolute, dirname } from 'path'
+import { dirname } from 'path'
 import { registerTool } from './registry.js'
 import { generateUnifiedDiff } from '../utils/diff.js'
+import { resolveSecurePath } from '../utils/path.js'
 import { makeLogger } from '../utils/logger.js'
 import type { HostAdapter } from '../host/interface.js'
 
@@ -33,9 +34,7 @@ registerTool(
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
-    const absPath = isAbsolute(args.path)
-      ? args.path
-      : join(host.getProjectRoot(), args.path)
+    const absPath = resolveSecurePath(args.path, host.getProjectRoot())
 
     // 변경 전 스냅샷 저장
     await host.triggerSafetySnapshot(absPath)

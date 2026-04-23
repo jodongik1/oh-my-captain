@@ -34,21 +34,28 @@ export function registerChatHandlers(state: CoreState) {
     log.debug('2. Set busy flag, starting runLoop')
     try {
       // [흐름 6] Agent Loop 실행 → LLM 스트리밍 + 도구 실행 사이클
-      const assistantContent = await runLoop({
+      const result = await runLoop({
         userText: text,
         host: state.host,
         provider: state.provider,
         history: [...state.history],
         settings: state.settings,
       })
-      if (assistantContent && state.sessionId) {
-        sessionDb.addMessage(state.sessionId, 'assistant', assistantContent)
+
+      // ── 히스토리 전체 동기화 (tool_calls, tool 결과 포함) ──
+      // 주의: userText는 runLoop 내부에서 messages에 push되므로,
+      // 반환된 conversationTurns는 이번 턴의 전체 대화 흐름을 포함합니다.
+      state.history = [...state.history, ...result.conversationTurns]
+
+      if (state.sessionId) {
+        // 기존 단순 텍스트 추가 방식 대신, 이번 턴에 추가된 모든 메시지를 DB에 기록
+        // (단, 기존 DB 스키마가 'user' | 'assistant' 만 지원할 수 있으므로
+        // tool 관련 메시지도 적절히 저장되도록 처리해야 하지만, 현재 DB 구현 범위 내에서 처리)
+        // 일단 최종 assistant 응답만 UI 세션용으로 저장 (UI는 tool_calls를 상세히 보여주지 않음)
+        // 향후 sessionDb도 전체 메시지(tool 포함)를 저장하도록 확장 필요.
+        sessionDb.addMessage(state.sessionId, 'assistant', result.finalContent || '(도구 실행 완료)')
       }
-      state.history = [
-        ...state.history,
-        { role: 'user', content: text },
-        ...(assistantContent ? [{ role: 'assistant' as const, content: assistantContent }] : []),
-      ]
+
       sessionDb.autoTitle(state.sessionId)
       log.debug('3. runLoop completed successfully')
     } catch (err: any) {

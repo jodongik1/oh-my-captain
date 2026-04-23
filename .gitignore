@@ -26,6 +26,7 @@ hosts/intellij/.gradle/
 hosts/intellij/.kotlin/
 hosts/intellij/.intellijPlatform/
 hosts/intellij/build/
+hosts/intellij/bin/
 hosts/intellij/gradle/wrapper/gradle-wrapper.jar
 local.properties
 

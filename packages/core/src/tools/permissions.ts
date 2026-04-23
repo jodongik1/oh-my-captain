@@ -25,7 +25,7 @@ export type PermissionDecision = 'allow' | 'deny' | 'prompt'
 const MODE_POLICY: Record<string, Record<ToolCategory, PermissionDecision>> = {
   plan:  { readonly: 'allow', write: 'deny',   destructive: 'deny' },
   ask:   { readonly: 'allow', write: 'prompt', destructive: 'prompt' },
-  auto:  { readonly: 'allow', write: 'allow',  destructive: 'allow' },
+  auto:  { readonly: 'allow', write: 'allow',  destructive: 'prompt' },
 }
 
 /**
@@ -49,6 +49,16 @@ export function isDestructiveCommand(command: string): boolean {
 }
 
 /**
+ * 셸 명령어 체이닝 및 명령어 치환을 감지합니다.
+ * ';', '&&', '||', '|', '$(...)', '`...`' 등이 포함된 경우 true.
+ * 이런 패턴이 있으면 단순 읽기 전용 판별을 신뢰할 수 없습니다.
+ */
+const SHELL_CHAINING_PATTERN = /[;|&]|`[^`]*`|\$\(/
+export function hasShellChaining(command: string): boolean {
+  return SHELL_CHAINING_PATTERN.test(command)
+}
+
+/**
  * 도구 실행 권한을 해결합니다.
  *
  * @param toolName 도구 이름
@@ -67,21 +77,36 @@ export function resolvePermission(
   // 현재는 skip
 
   // ── Step 2: 특수 규칙 ──
-  // Plan 모드에서 run_terminal의 읽기전용 명령은 허용
-  if (mode === 'plan' && toolName === 'run_terminal' && category === 'destructive') {
+  if (toolName === 'run_terminal') {
     const command = (args.command as string) || ''
-    if (isReadOnlyCommand(command)) {
-      return 'allow'
-    }
-  }
 
-  // Ask 모드에서 run_terminal의 파괴적 명령(rm 등)만 승인 요청
-  if (mode === 'ask' && toolName === 'run_terminal') {
-    const command = (args.command as string) || ''
+    // 셸 체이닝/치환이 감지되면 무조건 사용자 승인 요청
+    if (hasShellChaining(command)) {
+      log.debug(`셸 체이닝 감지: tool=${toolName} command="${command}" → prompt`)
+      return 'prompt'
+    }
+
+    // 파괴적 명령은 무조건 승인 요청
     if (isDestructiveCommand(command)) {
       return 'prompt'
     }
-    return 'allow'
+
+    // Plan 모드에서 읽기전용 명령은 허용
+    if (mode === 'plan' && isReadOnlyCommand(command)) {
+      return 'allow'
+    }
+
+    // Plan 모드에서 읽기전용이 아닌 명령은 거부
+    if (mode === 'plan') {
+      return 'deny'
+    }
+
+    // Ask/Auto 모드에서 읽기전용 명령은 허용
+    if (isReadOnlyCommand(command)) {
+      return 'allow'
+    }
+
+    // 그 외 명령은 모드 정책 따름 (ask → prompt, auto → allow)
   }
 
   // ── Step 3: 모드별 정책 ──

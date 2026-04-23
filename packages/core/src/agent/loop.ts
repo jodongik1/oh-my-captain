@@ -16,9 +16,15 @@ const log = makeLogger('loop.ts')
 
 /**
  * 에이전트 루프 최대 반복 횟수.
- * 무한 루프 방지를 위한 안전장치. 일반적인 작업은 20회 이내에 완료됩니다.
+ * 무한 루프 방지를 위한 안전장치. 일반적인 작업은 15회 이내에 완료됩니다.
  */
-const MAX_ITERATIONS = 100
+const MAX_ITERATIONS = 25
+
+/**
+ * 동일 에러 연속 감지 임계값.
+ * 같은 도구가 같은 에러를 이 횟수만큼 연속 반환하면 루프를 조기 중단합니다.
+ */
+const MAX_CONSECUTIVE_ERRORS = 3
 
 export interface RunLoopInput {
   userText: string
@@ -40,7 +46,14 @@ export function injectSteering(text: string) {
   steeringQueue.push(text)
 }
 
-export async function runLoop(input: RunLoopInput): Promise<string | null> {
+export interface RunLoopResult {
+  /** 마지막 assistant의 텍스트 응답 (없으면 null) */
+  finalContent: string | null
+  /** loop 내부에서 쌓인 전체 대화 턴 (system prompt 제외) — chat.ts의 history 동기화용 */
+  conversationTurns: Message[]
+}
+
+export async function runLoop(input: RunLoopInput): Promise<RunLoopResult> {
   abortController = new AbortController()
   const signal = abortController.signal
   const { userText, host, provider } = input
@@ -83,7 +96,9 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
     ]
 
     let iterations = 0
-    let noToolRetried = false
+    // 반복 에러 감지용 상태
+    let lastToolError: string | null = null
+    let consecutiveErrorCount = 0
 
     while (iterations++ < MAX_ITERATIONS) {
       if (signal.aborted) break
@@ -112,6 +127,10 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
 
       let response
       log.debug('Loop 4. Sending to provider (iteration', iterations, ')')
+      host.emit('thinking_start', {}) // 생각 시작 알림
+      const thinkingStart = Date.now()
+      let hasStartedStreaming = false
+
       host.emit('stream_start', { source: 'chat' })
       try {
         response = await provider.stream(
@@ -119,10 +138,21 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
           toolRegistry.getToolDefinitions(),
           (chunk) => {
             if (signal.aborted) return
+            
+            // 첫 번째 토큰이 오면 '생각 중' 상태를 종료
+            if (!hasStartedStreaming && chunk.token) {
+              hasStartedStreaming = true
+              host.emit('thinking_end', { durationMs: Date.now() - thinkingStart })
+            }
+
             if (chunk.token) host.emit('stream_chunk', { token: chunk.token })
           },
           signal
         )
+        // 스트림이 끝났는데 아직 thinking_end를 안 보냈다면 (토큰 없이 종료된 경우 등) 보냄
+        if (!hasStartedStreaming) {
+          host.emit('thinking_end', { durationMs: Date.now() - thinkingStart })
+        }
         log.debug('Loop 5. Provider stream resolved')
       } catch (e: any) {
         log.error('Loop provider stream error:', e)
@@ -137,23 +167,49 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
       host.emit('stream_end', {})
 
       if (!response.tool_calls?.length) {
-        const hasToolsInHistory = messages.some(m => m.role === 'tool')
-        if (!hasToolsInHistory && !noToolRetried) {
-          noToolRetried = true
-          log.debug('Loop: no tools called, injecting self-judgment retry steering')
-          messages.push(response)
-          messages.push({
-            role: 'user',
-            content: '앞의 요청이 실제 파일 변경(코드 추가·수정·삭제)을 원하는 것이라면, read_file로 파일을 읽은 뒤 edit_file 또는 write_file로 직접 수정해주세요. 설명이나 질문 답변이 목적이었다면 이전 응답으로 충분하니 추가 작업은 필요 없습니다.',
-          })
-          continue
-        }
         finalContent = typeof response.content === 'string' ? response.content : null
         break
       }
       messages.push(response)
 
       await dispatchTools(response.tool_calls, messages, host, signal)
+
+      // ── 반복 에러 감지 ──
+      // 마지막으로 push된 tool 결과 메시지들을 검사하여 동일 에러 연속 발생 여부 확인
+      const latestToolResults = messages.slice(-response.tool_calls.length)
+      const errorSignatures = latestToolResults
+        .filter(m => m.role === 'tool')
+        .map(m => {
+          try {
+            const parsed = JSON.parse(m.content as string)
+            return parsed?.error ? `${parsed.error}` : null
+          } catch { return null }
+        })
+        .filter(Boolean)
+
+      if (errorSignatures.length > 0) {
+        const currentError = errorSignatures.join('|')
+        if (currentError === lastToolError) {
+          consecutiveErrorCount++
+          log.warn(`반복 에러 감지 (${consecutiveErrorCount}/${MAX_CONSECUTIVE_ERRORS}): ${currentError.slice(0, 100)}`)
+          if (consecutiveErrorCount >= MAX_CONSECUTIVE_ERRORS) {
+            log.error(`동일 에러 ${MAX_CONSECUTIVE_ERRORS}회 연속 발생 — 루프 조기 중단`)
+            host.emit('error', {
+              message: `같은 오류가 ${MAX_CONSECUTIVE_ERRORS}회 반복되어 작업을 중단합니다. 다른 방법을 시도해 주세요.`,
+              retryable: true,
+            })
+            finalContent = typeof response.content === 'string' ? response.content : null
+            break
+          }
+        } else {
+          lastToolError = currentError
+          consecutiveErrorCount = 1
+        }
+      } else {
+        // 에러 없는 성공적 도구 실행 → 카운터 리셋
+        lastToolError = null
+        consecutiveErrorCount = 0
+      }
 
       if (signal.aborted) break
       const userRejected = messages.some(m => {
@@ -171,11 +227,14 @@ export async function runLoop(input: RunLoopInput): Promise<string | null> {
       })
     }
 
+    // system prompt(messages[0])를 제외한 나머지가 실제 대화 턴
+    const conversationTurns = messages.slice(1)
+    return { finalContent, conversationTurns }
+
   } catch (e: any) {
     host.emit('error', { message: `에이전트 오류: ${e?.message}`, retryable: false })
+    return { finalContent, conversationTurns: [] }
   }
-
-  return finalContent
 }
 
 async function dispatchTools(

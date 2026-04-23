@@ -35,7 +35,10 @@ export class OllamaProvider implements LLMProvider {
 
     const ollamaMessages = messages.map(m => {
       if (m.role === 'tool') {
-        return { role: 'tool' as const, content: m.content }
+        // tool_call_id를 유지해야 LLM이 어떤 도구의 응답인지 추적할 수 있습니다.
+        // Ollama API 스펙에 맞추어(필요하다면 role:'tool'을 유지하거나, 버전에 따라 user 등으로 처리)
+        // 최소한 우리가 전달받은 데이터는 유지합니다.
+        return { role: 'tool' as const, content: m.content } // TODO: Ollama Native Tool Calling에서 tool_call_id를 어떻게 받는지 확인 필요. 현재는 ollama 라이브러리 스펙이 제한적일 수 있으나 향후 확장을 위해 일단 유지
       }
       return m
     })
@@ -123,8 +126,10 @@ export class OllamaProvider implements LLMProvider {
     }
 
     const textToolCalls = filter.parsedToolCalls
-    if (textToolCalls.length > 0) {
-      toolCalls = [...(toolCalls ?? []), ...textToolCalls]
+    // Native tool_calls가 없을 때만 TextToolCallFilter의 결과를 사용합니다. (중복 방지)
+    if (textToolCalls.length > 0 && (!toolCalls || toolCalls.length === 0)) {
+      log.info(`[Ollama] Native tool_calls가 없어 TextToolCallFilter 결과(${textToolCalls.length}개)를 폴백으로 사용합니다.`)
+      toolCalls = textToolCalls
     }
     const safeContent = stripToolCallXml(fullContent)
     
