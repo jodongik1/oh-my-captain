@@ -58,6 +58,7 @@ export interface AppState {
   showModelSelector: boolean
   isConfigured: boolean | null // null = 하직 로드 전, false = 미설정 온보딩
   settings: any | null         // CaptainSettings 타입 (store에서는 any 표기)
+  fileSearchResults: string[]
 }
 
 export type AppAction =
@@ -87,6 +88,7 @@ export type AppAction =
   | { type: 'ADD_APPROVAL'; entry: TimelineEntry }
   | { type: 'RESOLVE_APPROVAL'; requestId: string; approved: boolean }
   | { type: 'ELEVATE_STREAM_TO_THINKING' }
+  | { type: 'SET_FILE_SEARCH_RESULTS'; files: string[] }
 
 export const initialState: AppState = {
   mode: 'ask',
@@ -104,6 +106,7 @@ export const initialState: AppState = {
   showModelSelector: false,
   isConfigured: null,
   settings: null,
+  fileSearchResults: [],
 }
 
 export function appReducer(state: AppState, action: AppAction): AppState {
@@ -331,6 +334,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       }
       return state
     }
+
+    case 'SET_FILE_SEARCH_RESULTS':
+      return { ...state, fileSearchResults: action.files }
 
     default:
       return state

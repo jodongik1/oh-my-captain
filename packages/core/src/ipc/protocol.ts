@@ -33,6 +33,8 @@ export type IntellijMessage =
   // ── 스티어링 큐 (실행 중 사용자 개입) ──
   | { id: string; type: 'steer_inject';          payload: { text: string } }
   | { id: string; type: 'steer_interrupt';       payload: Record<string, never> }
+  // ── 파일 검색 (멘션 기능) ──
+  | { id: string; type: 'file_search';           payload: { query: string } }
 
 export interface InitPayload {
   projectRoot: string
@@ -71,6 +73,8 @@ export type CoreMessage =
   // ── 모델 선택 ──
   | { id: string; type: 'model_list_result'; payload: { models: ModelInfo[]; currentModel: string } }
   | { id: string; type: 'model_switched';    payload: { modelId: string; contextWindow: number } }
+  // ── 파일 검색 (멘션 기능) ──
+  | { id: string; type: 'file_search_result'; payload: { files: string[] } }
 
 // ── 설정 (정규 정의는 settings/types.ts) ──
 export type { CaptainSettings, ProviderSettings, ModelSettings } from '../settings/types.js'

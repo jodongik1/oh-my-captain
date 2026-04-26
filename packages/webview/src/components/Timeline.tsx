@@ -99,7 +99,7 @@ export default function Timeline({ entries, isBusy, onApprovalResponse }: Timeli
                   </div>
                 )}
                 {entry.type === 'stream' && (
-                  <StreamRow content={entry.content ?? ''} isStreaming={entry.isStreaming} syntaxHighlight={entry.source === 'action'} />
+                  <StreamRow content={entry.content ?? ''} isStreaming={entry.isStreaming} syntaxHighlight={true} />
                 )}
                 {entry.type === 'tool_start' && entry.tool === 'run_terminal' && (
                   <BashRow

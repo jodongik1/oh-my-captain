@@ -9,9 +9,10 @@ export function generateUnifiedDiff(
   oldContent: string,
   newContent: string
 ): string {
+  const fileName = filePath.split('/').pop() || filePath
   return createTwoFilesPatch(
-    `a/${filePath}`,
-    `b/${filePath}`,
+    fileName,
+    fileName,
     oldContent,
     newContent,
     '', '',

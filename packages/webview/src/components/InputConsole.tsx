@@ -6,6 +6,8 @@ import ModelSelectorPopup from './ModelSelectorPopup'
 import ModePopup from './ModePopup'
 import { Plus, SquareSlash, ArrowUp, Square, FileText, Code, ClipboardList, Upload, Globe } from 'lucide-react'
 
+import MentionPopup from './MentionPopup'
+
 interface InputConsoleProps {
   mode: Mode
   contextUsage: AppState['contextUsage']
@@ -14,6 +16,7 @@ interface InputConsoleProps {
   availableModels: ModelInfo[]
   showModelSelector: boolean
   slashFilter: string | null
+  fileSearchResults: string[]
   onSend: (text: string) => void
   onModeChange: (mode: Mode) => void
   onAbort: () => void
@@ -42,7 +45,7 @@ function ModeIcon({ mode, size = 14 }: { mode: Mode; size?: number }) {
 
 export default function InputConsole({
   mode, contextUsage, isBusy, currentModel, availableModels,
-  showModelSelector, slashFilter, onSend, onModeChange, onAbort,
+  showModelSelector, slashFilter, fileSearchResults, onSend, onModeChange, onAbort,
   onSlashFilterChange, onToggleModelSelector, onModelSelect,
   onNewSession, onOpenSettings
 }: InputConsoleProps) {
@@ -51,12 +54,36 @@ export default function InputConsole({
   const [showActionMenu, setShowActionMenu] = useState(false)
   const [showAddContext, setShowAddContext] = useState(false)
   const [isFocused, setIsFocused] = useState(false)
+  const [atFilter, setAtFilter] = useState<{ query: string; index: number } | null>(null)
+  const [mentionIndex, setMentionIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
 
   // suppress unused var
   void contextUsage
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 멘션 팝업이 열려있을 때의 키보드 제어
+    if (atFilter !== null) {
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMentionIndex(prev => Math.max(0, prev - 1))
+        return
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMentionIndex(prev => Math.min(fileSearchResults.length - 1, prev + 1))
+        return
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        if (fileSearchResults[mentionIndex]) {
+          handleMentionSelect(fileSearchResults[mentionIndex])
+        }
+        return
+      }
+    }
+
     if (e.key === 'Tab' && e.shiftKey) {
       e.preventDefault()
       const idx = MODES.indexOf(mode)
@@ -75,23 +102,61 @@ export default function InputConsole({
       }
       return
     }
-    if (e.key === 'Escape') {
+      if (e.key === 'Escape') {
       onSlashFilterChange(null)
       setShowModePopup(false)
       setShowActionMenu(false)
+      setAtFilter(null)
     }
-  }, [mode, text, isBusy, slashFilter, showActionMenu, onSend, onModeChange, onSlashFilterChange])
+  }, [mode, text, isBusy, slashFilter, showActionMenu, atFilter, mentionIndex, fileSearchResults, onSend, onModeChange, onSlashFilterChange])
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value
     setText(val)
+    
+    // Slash command check
     if (val.startsWith('/')) {
       onSlashFilterChange(val)
+      setAtFilter(null)
     } else {
       onSlashFilterChange(null)
       setShowActionMenu(false)
+      
+      // Mention check (@)
+      const cursor = e.target.selectionStart
+      const textBeforeCursor = val.slice(0, cursor)
+      const match = /(?:^|\s)(@([^\s]*))$/.exec(textBeforeCursor)
+      
+      if (match) {
+        const query = match[2]
+        const index = match.index + (match[0].startsWith(' ') ? 1 : 0) // @의 시작 인덱스
+        setAtFilter({ query, index })
+        setMentionIndex(0)
+        sendToHost({ type: 'file_search', payload: { query } })
+      } else {
+        setAtFilter(null)
+      }
     }
   }, [onSlashFilterChange])
+
+  const handleMentionSelect = useCallback((file: string) => {
+    if (!atFilter) return
+    const before = text.slice(0, atFilter.index)
+    // 현재 커서 위치를 찾기 위해 @ 부터 커서까지의 길이를 계산해야 하나,
+    // 간단히 마지막 @ 부분만 대체한다고 가정.
+    const match = /(?:^|\s)(@([^\s]*))$/.exec(text.slice(0, textareaRef.current?.selectionStart || text.length))
+    if (match) {
+       const replaceStart = match.index + (match[0].startsWith(' ') ? 1 : 0)
+       const replaceEnd = replaceStart + match[1].length
+       const newText = text.slice(0, replaceStart) + `@${file} ` + text.slice(replaceEnd)
+       setText(newText)
+    } else {
+       // fallback
+       setText(before + `@${file} `)
+    }
+    setAtFilter(null)
+    textareaRef.current?.focus()
+  }, [text, atFilter])
 
   const buildCommands = (): SlashCommand[] => [
     {
@@ -143,6 +208,14 @@ export default function InputConsole({
             onClose={() => { onSlashFilterChange(null); setShowActionMenu(false); }}
           />
         )}
+        {atFilter !== null && (
+          <MentionPopup
+            files={fileSearchResults}
+            selectedIndex={mentionIndex}
+            onSelect={handleMentionSelect}
+            onClose={() => setAtFilter(null)}
+          />
+        )}
         {showModelSelector && (
           <ModelSelectorPopup
             models={availableModels}
@@ -154,24 +227,72 @@ export default function InputConsole({
       </div>
 
       <div className={`input-wrapper ${isFocused ? 'mode-' + mode + ' focused' : ''}`}>
-        <textarea
-          ref={textareaRef}
-          className="input-field"
-          placeholder={isBusy ? 'Captain이 작업 중입니다...' : '⌘ Esc로 Captain에 포커스하거나 해제하세요'}
-          value={text}
-          disabled={isBusy}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          rows={1}
-          style={{ height: 'auto' }}
-          onInput={(e) => {
-            const t = e.target as HTMLTextAreaElement
-            t.style.height = 'auto'
-            t.style.height = Math.min(t.scrollHeight, 140) + 'px'
-          }}
-        />
+        <div className="textarea-container" style={{ position: 'relative' }}>
+          <div 
+            ref={overlayRef}
+            className="textarea-overlay" 
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              pointerEvents: 'none',
+              padding: '12px 14px',
+              fontFamily: 'var(--font-sans)',
+              fontSize: '14px',
+              lineHeight: '1.5',
+              whiteSpace: 'pre-wrap',
+              wordWrap: 'break-word',
+              color: 'var(--fg-primary)',
+              overflowY: 'hidden'
+            }}
+          >
+            {text === '' && (
+              <span style={{ color: 'var(--fg-faint)', userSelect: 'none' }}>
+                {isBusy ? 'Captain이 작업 중입니다...' : '⌘ Esc로 Captain에 포커스하거나 해제하세요'}
+              </span>
+            )}
+            {text.split(/(@\S+)/g).map((part, i) => {
+              if (part.startsWith('@') && part.length > 1) {
+                return <span key={i} className="mention-pill">{part}</span>
+              }
+              return <span key={i}>{part}</span>
+            })}
+            {/* textarea 커서 싱크를 위해 맨 끝에 공백 유지 */}
+            {text.endsWith('\n') ? <br /> : null}
+          </div>
+          <textarea
+            ref={textareaRef}
+            className="input-field"
+            placeholder={isBusy ? 'Captain이 작업 중입니다...' : '⌘ Esc로 Captain에 포커스하거나 해제하세요'}
+            value={text}
+            disabled={isBusy}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            rows={1}
+            style={{ 
+              height: 'auto', 
+              position: 'relative', 
+              background: 'transparent',
+              color: 'transparent',
+              caretColor: 'var(--text-primary)' 
+            }}
+            onScroll={(e) => {
+              if (overlayRef.current) {
+                overlayRef.current.scrollTop = (e.target as HTMLTextAreaElement).scrollTop
+              }
+            }}
+            onInput={(e) => {
+              const t = e.target as HTMLTextAreaElement
+              t.style.height = 'auto'
+              t.style.height = Math.min(t.scrollHeight, 140) + 'px'
+            }}
+          />
+        </div>
 
         <div className="input-footer">
           <div className="footer-left">

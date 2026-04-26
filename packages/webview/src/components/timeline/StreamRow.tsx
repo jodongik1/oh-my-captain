@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Copy, Check } from 'lucide-react'
+import MermaidBlock from './MermaidBlock'
 
 interface StreamRowProps {
   content: string
@@ -37,6 +38,12 @@ export default function StreamRow({ content, isStreaming, syntaxHighlight }: Str
           code({ node, inline, className, children, ...props }: any) {
             const match = /language-(\w+)/.exec(className || '')
             const codeString = String(children).replace(/\n$/, '')
+
+            // Mermaid 다이어그램 렌더링
+            if (!inline && match && match[1] === 'mermaid') {
+              return <MermaidBlock code={codeString} />
+            }
+
             if (!inline && match) {
               return (
                 <div className="code-block-wrapper">

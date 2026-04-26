@@ -153,5 +153,11 @@ export function createIpcHandlers(ctx: IpcHandlerCtx): IpcHandlerMap {
       }
       dispatch({ type: 'ADD_APPROVAL', entry })
     },
+
+    // ── 파일 검색 결과 ───────────────────────────────────────
+    file_search_result: (payload) => {
+      const p = payload as { files: string[] }
+      dispatch({ type: 'SET_FILE_SEARCH_RESULTS', files: p.files })
+    },
   }
 }

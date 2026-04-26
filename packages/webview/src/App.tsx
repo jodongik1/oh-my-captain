@@ -158,6 +158,7 @@ export default function App() {
           availableModels={state.availableModels}
           showModelSelector={state.showModelSelector}
           slashFilter={state.slashFilter}
+          fileSearchResults={state.fileSearchResults}
           onSend={handleSend}
           onModeChange={handleModeChange}
           onAbort={handleAbort}

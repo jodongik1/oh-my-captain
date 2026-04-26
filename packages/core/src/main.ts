@@ -9,6 +9,7 @@ import { registerSettingsHandlers } from './ipc/handlers/settings.js'
 import { registerModelHandlers } from './ipc/handlers/model.js'
 import { registerCodeActionHandlers } from './ipc/handlers/code_action.js'
 import { registerClientLogHandlers } from './ipc/handlers/client_log.js'
+import { registerFileSearchHandlers } from './ipc/handlers/file_search.js'
 
 // ── 도구 등록 (barrel import — 모든 도구를 일괄 등록) ──
 import './tools/index.js'
@@ -37,3 +38,4 @@ registerSettingsHandlers(state)
 registerModelHandlers(state)
 registerCodeActionHandlers(state)
 registerClientLogHandlers()
+registerFileSearchHandlers(state)
