@@ -24,7 +24,9 @@ HTML은 텍스트로 변환되며, 큰 페이지는 maxLength로 잘립니다.`,
         required: ['url'],
       },
     },
-    category: 'readonly',
+    // 외부 네트워크 호출은 잠재적 데이터 유출/SSRF 위험이 있으므로 destructive 로 분류.
+    // plan: deny / ask: prompt / auto: allow (auto 는 사용자가 명시적으로 선택한 무승인 모드)
+    category: 'destructive',
     concurrencySafe: true,
   },
   async (rawArgs, _host: HostAdapter) => {

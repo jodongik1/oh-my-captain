@@ -2,6 +2,11 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { LLMProvider, Message, StreamChunk, AssistantMessage, ToolCall } from './types.js'
 import type { ToolDefinition } from '../tools/registry.js'
 
+/** extended thinking(추론 모델) 지원 여부 — 모델 이름으로 자동 감지 */
+function supportsExtendedThinking(model: string): boolean {
+  return /claude-(3-7|opus-4|sonnet-4|haiku-4)/i.test(model)
+}
+
 export class AnthropicProvider implements LLMProvider {
   private client: Anthropic
 
@@ -53,6 +58,24 @@ export class AnthropicProvider implements LLMProvider {
         }
         return { role: 'assistant' as const, content }
       }
+      // user 메시지에 이미지 첨부가 있으면 multipart 로 전환 (Anthropic 형식)
+      if (m.role === 'user' && (m as { attachments?: { mediaType: string; data: string }[] }).attachments?.length) {
+        const atts = (m as { attachments: { mediaType: string; data: string }[] }).attachments
+        const parts: Anthropic.ContentBlockParam[] = []
+        for (const a of atts) {
+          parts.push({
+            type: 'image',
+            source: {
+              type: 'base64',
+              // SDK 0.37 의 Base64ImageSource 타입 미공개 — runtime 에는 OK
+              media_type: a.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+              data: a.data,
+            },
+          })
+        }
+        if (m.content) parts.push({ type: 'text', text: m.content })
+        return { role: 'user' as const, content: parts }
+      }
       return { role: m.role as 'user' | 'assistant', content: m.content }
     })
 
@@ -65,13 +88,23 @@ export class AnthropicProvider implements LLMProvider {
           }))
         : undefined
 
-    const stream = this.client.messages.stream({
+    const useThinking = supportsExtendedThinking(this.config.model)
+    const requestParams: Anthropic.MessageStreamParams = {
       model: this.config.model,
-      max_tokens: 8192,
+      max_tokens: useThinking ? 16384 : 8192,
       system: systemMsg,
       messages: anthropicMessages,
       tools: anthropicTools,
-    })
+    }
+    if (useThinking) {
+      // 추론 모델 전용 옵션. 사용자에게 사고 시간/내용을 노출 가능.
+      ;(requestParams as unknown as Record<string, unknown>).thinking = {
+        type: 'enabled',
+        budget_tokens: 4000,
+      }
+    }
+
+    const stream = this.client.messages.stream(requestParams)
 
     // AbortSignal 연동
     if (signal) {
@@ -86,6 +119,24 @@ export class AnthropicProvider implements LLMProvider {
       fullContent += text
       onChunk({ token: text })
     })
+
+    // extended thinking 이 활성화된 경우 thinking_delta 를 별도 채널로 전달
+    if (useThinking) {
+      // SDK 의 streamEvent 이벤트는 정식 타입에 노출되지 않을 수 있어 우회 캐스트로 구독
+      const streamAny = stream as unknown as {
+        on: (event: string, listener: (e: unknown) => void) => void
+      }
+      streamAny.on('streamEvent', (event: unknown) => {
+        const e = event as { type?: string; delta?: { type?: string; thinking?: string } }
+        if (
+          e?.type === 'content_block_delta' &&
+          e.delta?.type === 'thinking_delta' &&
+          typeof e.delta.thinking === 'string'
+        ) {
+          onChunk({ thinking: e.delta.thinking })
+        }
+      })
+    }
 
     try {
       const finalMessage = await stream.finalMessage()
@@ -116,6 +167,16 @@ export class AnthropicProvider implements LLMProvider {
       content: fullContent,
       tool_calls: toolCalls.length > 0 ? toolCalls : undefined
     }
+  }
+
+  async getCapabilities(modelId: string): Promise<string[]> {
+    // Anthropic /v1/models 는 capability 정보를 노출하지 않음.
+    // Claude 3 이상 + Opus/Sonnet/Haiku 4 는 모두 vision + tools + thinking 지원.
+    const m = modelId.toLowerCase()
+    const caps: string[] = ['completion', 'tools']
+    if (/claude-(3|opus-4|sonnet-4|haiku-4)/.test(m)) caps.push('vision')
+    if (/claude-(3-7|opus-4|sonnet-4|haiku-4)/.test(m)) caps.push('thinking')
+    return caps
   }
 
   async complete(prompt: string): Promise<string> {

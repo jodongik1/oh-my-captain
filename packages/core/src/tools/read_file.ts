@@ -16,7 +16,12 @@ registerTool(
     type: 'function',
     function: {
       name: 'read_file',
-      description: '파일의 내용을 읽어 반환합니다. 큰 파일은 startLine/endLine으로 범위를 지정하세요.',
+      description: `파일의 내용을 라인 번호와 함께 반환합니다. 큰 파일은 startLine/endLine 으로 범위를 지정하세요.
+
+**여러 파일을 한 응답에서 병렬로 호출 가능** — 분석 시 핵심 파일 3~5개를 동시에 읽으세요.
+예: 광범위 분석 첫 turn 에 \`read_file('package.json')\`, \`read_file('README.md')\`, \`read_file('tsconfig.json')\` 을 한꺼번에 호출.
+
+grep_tool 로 위치를 먼저 파악한 뒤 startLine/endLine 으로 좁혀 읽으면 토큰 효율이 좋습니다.`,
       parameters: {
         type: 'object',
         properties: {

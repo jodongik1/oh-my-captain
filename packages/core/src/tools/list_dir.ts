@@ -22,8 +22,14 @@ registerTool(
     type: 'function',
     function: {
       name: 'list_dir',
-      description: `디렉토리의 파일과 하위 디렉토리를 트리 형태로 탐색합니다.
-depth로 재귀 깊이를 제어할 수 있습니다. 프로젝트 구조 파악에 유용합니다.`,
+      description: `**좁은 범위(한 디렉토리, 1~2 단계)** 의 내용을 트리 형태로 보여줍니다.
+
+⚠️ 트리 워킹 금지: 프로젝트 전체 구조 파악에 list_dir 을 반복 호출하지 마세요.
+- 광범위 분석에는 \`glob_tool('**/*.{ts,tsx,kt,...}')\` 또는 \`run_terminal('find . -maxdepth 3 ...')\` 를 사용하세요.
+- 한 번에 더 깊게 보려면 \`depth\` 를 2 이상으로 지정하세요 (기본 1).
+- 같은 도구를 반복 호출하면 시스템이 hint 를 주입하고 강제 중단될 수 있습니다.
+
+적절한 사용 예: 사용자가 "src/components 디렉토리만 보여줘" 처럼 좁은 범위를 명시했을 때.`,
       parameters: {
         type: 'object',
         properties: {

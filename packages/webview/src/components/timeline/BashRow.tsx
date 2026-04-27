@@ -1,3 +1,4 @@
+import { useState, type MouseEvent } from 'react'
 import { sendToHost } from '../../bridge/jcef'
 
 interface BashRowProps {
@@ -6,7 +7,10 @@ interface BashRowProps {
   isActive?: boolean
 }
 
+const PREVIEW_LINES = 6
+
 export default function BashRow({ command, result, isActive }: BashRowProps) {
+  const [expanded, setExpanded] = useState(false)
   const hasOutput = result && (result.stdout || result.stderr || result.error)
   const failed = result && (result.exitCode !== 0 || result.error)
 
@@ -14,18 +18,19 @@ export default function BashRow({ command, result, isActive }: BashRowProps) {
   const outputText = (result?.stdout || '') + (result?.stderr || '') + (result?.error || '')
   const allLines = outputText ? outputText.split('\n') : []
   const lineCount = allLines.filter(Boolean).length
-  const isLongOutput = lineCount > 3
+  const isLongOutput = lineCount > PREVIEW_LINES
 
-  // 미리보기: 최대 3줄만 표시
-  const previewText = allLines.slice(0, 3).join('\n')
+  // 미리보기: 처음 PREVIEW_LINES 줄만
+  const previewText = allLines.slice(0, PREVIEW_LINES).join('\n')
 
-  // 명령어 요약 (50자 이하면 그대로, 길면 잘라서 표시)
-  const commandSummary = command.length <= 50
+  // 명령어 요약 (60자 이하면 그대로, 길면 잘라서 표시)
+  const commandSummary = command.length <= 60
     ? command
-    : command.slice(0, 47) + '...'
+    : command.slice(0, 57) + '...'
 
-  // OUT 클릭 → 에디터 탭으로 열기
-  const handleOutClick = () => {
+  // 펼친 상태에서 외부 탭으로 열기 (오른쪽 작은 링크)
+  const openInTab = (e: MouseEvent) => {
+    e.stopPropagation()
     if (!hasOutput) return
     sendToHost({
       type: 'open_tool_output',
@@ -51,19 +56,31 @@ export default function BashRow({ command, result, isActive }: BashRowProps) {
           </div>
         </div>
         {hasOutput && (
-          <div className="in-out-row out-row" onClick={handleOutClick}>
+          <div className="in-out-row out-row" onClick={() => setExpanded(v => !v)}>
             <div className="in-out-label">
               OUT
               {lineCount > 0 && <span className="line-count">{lineCount}</span>}
             </div>
-            <div className={`in-out-content output-text ${isLongOutput ? 'output-preview' : 'expanded'}`}>
-              {isLongOutput ? (
-                <span>{previewText}</span>
+            <div className={`in-out-content output-text ${isLongOutput && !expanded ? 'output-preview' : 'expanded'}`}>
+              {isLongOutput && !expanded ? (
+                <>
+                  <span>{previewText}</span>
+                  <span className="tap-to-expand"> + {lineCount - PREVIEW_LINES} lines (클릭하여 펼치기)</span>
+                </>
               ) : (
                 <>
                   {result?.error && <span className="error-text">{result.error}</span>}
                   {result?.stdout && <span>{result.stdout}</span>}
                   {result?.stderr && <span className="error-text">{result.stderr}</span>}
+                  {expanded && isLongOutput && (
+                    <span
+                      className="tap-to-expand"
+                      onClick={openInTab}
+                      title="새 에디터 탭으로 열기"
+                    >
+                      {' '}· 탭으로 열기
+                    </span>
+                  )}
                 </>
               )}
             </div>

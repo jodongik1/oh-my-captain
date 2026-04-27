@@ -8,7 +8,7 @@ interface DiffViewProps {
   defaultExpanded?: boolean
 }
 
-export default function DiffView({ diff, defaultExpanded = false }: DiffViewProps) {
+export default function DiffView({ diff, defaultExpanded = true }: DiffViewProps) {
   const [expanded, setExpanded] = useState(defaultExpanded)
   const [viewMode, setViewMode] = useState<'unified' | 'split'>('split')
 

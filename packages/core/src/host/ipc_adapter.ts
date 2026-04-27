@@ -1,7 +1,13 @@
 import { request, send } from '../ipc/server.js'
 import { nanoid } from 'nanoid'
 import type { HostAdapter, CoreEventMap } from './interface.js'
-import type { FileContext, ApprovalRequest } from '../ipc/protocol.js'
+import type { FileContext, ApprovalRequest, Diagnostic } from '../ipc/protocol.js'
+import { makeLogger } from '../utils/logger.js'
+
+const log = makeLogger('ipc_adapter.ts')
+
+/** 진단 요청 timeout — host 가 미구현이거나 느린 경우 폴백을 위해 짧게 잡음 */
+const DIAGNOSTICS_TIMEOUT_MS = 3_000
 
 export class IpcHostAdapter implements HostAdapter {
   constructor(
@@ -42,12 +48,35 @@ export class IpcHostAdapter implements HostAdapter {
     send({ id: nanoid(), type, payload } as any)
   }
 
-  async getDiagnostics(path: string) {
-    const files = await request<FileContext[]>({
-      id: nanoid(),
-      type: 'context_request',
-      payload: { paths: [path] }
-    })
-    return files[0]?.diagnostics ?? []
+  /**
+   * IDE 측 등록된 action 을 트리거. fire-and-forget — host 가 응답을 보내지 않아도 됨.
+   * 액션 자체가 PSI/언어 컨텍스트를 수집해 별도 IPC(code_action 등) 로 진행하므로
+   * 여기서는 명령 전송만 책임진다.
+   */
+  async invokeIdeAction(actionId: string): Promise<void> {
+    send({ id: nanoid(), type: 'invoke_action', payload: { actionId } })
+  }
+
+  /**
+   * host 측 진단(IntelliJ Inspection / VS Code LSP / 기타 LSP client) 을 IPC 로 요청.
+   * timeout 이 발생하거나 host 가 미구현이면 빈 배열을 반환해 호출자가 폴백할 수 있게 한다.
+   */
+  async getProjectDiagnostics(paths?: string[]): Promise<Diagnostic[]> {
+    try {
+      const result = await Promise.race([
+        request<{ diagnostics: Diagnostic[] }>({
+          id: nanoid(),
+          type: 'diagnostics_request',
+          payload: { paths: paths ?? [] }
+        }),
+        new Promise<{ diagnostics: Diagnostic[] }>((_, reject) =>
+          setTimeout(() => reject(new Error('diagnostics_timeout')), DIAGNOSTICS_TIMEOUT_MS)
+        ),
+      ])
+      return result?.diagnostics ?? []
+    } catch (e) {
+      log.debug(`getProjectDiagnostics 미응답/실패 — 빈 배열 반환 (${(e as Error).message})`)
+      return []
+    }
   }
 }

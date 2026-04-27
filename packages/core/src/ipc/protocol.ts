@@ -9,7 +9,7 @@ export interface IPCMessage {
 // ── IntelliJ → Core ──────────────────────────────────────────────
 export type IntellijMessage =
   | { id: string; type: 'init';                  payload: InitPayload }
-  | { id: string; type: 'user_message';          payload: { text: string; sessionId?: string } }
+  | { id: string; type: 'user_message';          payload: { text: string; sessionId?: string; attachments?: ImageAttachment[] } }
   | { id: string; type: 'context_response';      payload: FileContext[] }
   | { id: string; type: 'approval_response';     payload: { approved: boolean } }
   | { id: string; type: 'abort';                 payload: Record<string, never> }
@@ -35,6 +35,18 @@ export type IntellijMessage =
   | { id: string; type: 'steer_interrupt';       payload: Record<string, never> }
   // ── 파일 검색 (멘션 기능) ──
   | { id: string; type: 'file_search';           payload: { query: string } }
+  // ── IDE Action 트리거 (webview 슬래시 → IntelliJ 우클릭 메뉴와 동일 진입점) ──
+  | { id: string; type: 'invoke_ide_action';     payload: { actionId: string } }
+  // ── IDE-agnostic 진단 응답 (host → core, Phase 5) ──
+  | { id: string; type: 'diagnostics_response';  payload: { diagnostics: Diagnostic[] } }
+
+/** 사용자 메시지 첨부(이미지) — 멀티모달 모델일 때만 전송됨 */
+export interface ImageAttachment {
+  kind: 'image'
+  mediaType: string   // 'image/png', 'image/jpeg' 등
+  data: string        // base64 (no data: prefix)
+  filename?: string
+}
 
 export interface InitPayload {
   projectRoot: string
@@ -51,10 +63,19 @@ export type CoreMessage =
   | { id: string; type: 'stream_start';      payload: { source: 'chat' | 'action' } }
   | { id: string; type: 'stream_chunk';      payload: { token: string } }
   | { id: string; type: 'stream_end';        payload: Record<string, never> }
-  | { id: string; type: 'thinking_start';    payload: Record<string, never> }
-  | { id: string; type: 'thinking_end';      payload: { durationMs: number } }
+  | { id: string; type: 'turn_done';         payload: Record<string, never> }
+  | { id: string; type: 'thinking_start';    payload: { iteration?: number; afterTool?: boolean } }
+  | { id: string; type: 'thinking_end';      payload: { durationMs: number; content?: string } }
   | { id: string; type: 'tool_start';        payload: { tool: string; args: unknown } }
   | { id: string; type: 'tool_result';       payload: { tool: string; result: unknown } }
+  // ── 자동 검증 (Auto Verifier) ──
+  | { id: string; type: 'verify_start';      payload: { command: string; projectKind: string } }
+  | { id: string; type: 'verify_result';     payload: { command: string; projectKind: string; passed: boolean; exitCode: number; output: string; durationMs: number; timedOut: boolean } }
+  // ── IDE-agnostic 진단 (Diagnostics) — Phase 5 인터페이스 ──
+  // core → host 요청, host → core 응답. host(IntelliJ/VS Code/...) 가 자체 방식으로 구현.
+  | { id: string; type: 'diagnostics_request';  payload: { paths: string[] } }
+  // ── IDE Action 호출 (core → host) — IntelliJ 의 ActionManager 같은 IDE 별 추상화 ──
+  | { id: string; type: 'invoke_action';        payload: { actionId: string } }
   | { id: string; type: 'open_in_editor';    payload: { path: string; line?: number } }
   | { id: string; type: 'error';             payload: { message: string; retryable: boolean } }
   | { id: string; type: 'context_usage';     payload: { usedTokens: number; maxTokens: number; percentage: number } }
@@ -72,7 +93,8 @@ export type CoreMessage =
   | { id: string; type: 'connection_test_result'; payload: { success: boolean; models?: ModelInfo[]; error?: string } }
   // ── 모델 선택 ──
   | { id: string; type: 'model_list_result'; payload: { models: ModelInfo[]; currentModel: string } }
-  | { id: string; type: 'model_switched';    payload: { modelId: string; contextWindow: number } }
+  // model_switched 의 capabilities — webview 가 멀티모달/툴/사고 가능 여부 즉시 반영
+  | { id: string; type: 'model_switched';    payload: { modelId: string; contextWindow: number; capabilities?: string[] } }
   // ── 파일 검색 (멘션 기능) ──
   | { id: string; type: 'file_search_result'; payload: { files: string[] } }
 
@@ -84,6 +106,13 @@ export interface ModelInfo {
   id: string
   name: string
   contextWindow?: number
+  /**
+   * 모델 capability 식별자 배열 — 'completion', 'vision', 'tools', 'thinking' 등.
+   * - Ollama: /api/show 응답의 capabilities + families 를 동적으로 채움
+   * - Anthropic/OpenAI: 모델 이름 패턴 기반 (cloud provider 는 capability API 부재)
+   * - 비어 있으면 webview 가 자체 정규식 fallback
+   */
+  capabilities?: string[]
 }
 
 export type CodeActionType = 'explain' | 'review' | 'impact' | 'query_validation' | 'improve' | 'generate_test'
@@ -119,10 +148,20 @@ export interface Symbol {
   line: number
 }
 
+/**
+ * IDE-agnostic 진단 정보 (LSP 호환).
+ * host (IntelliJ / VS Code / Neovim 등) 가 자체 방식으로 수집해 core 에 전달.
+ *
+ * NOTE: path/column/source 는 file 단위 응답(`diagnostics_response`) 에서 사용,
+ *       FileContext.diagnostics 는 path 가 자명하므로 생략 가능.
+ */
 export interface Diagnostic {
-  severity: 'error' | 'warning' | 'info'
+  path?: string                                             // 프로젝트 루트 기준 상대 경로 (FileContext 내부에서는 생략 가능)
+  line: number                                              // 1-indexed
+  column?: number                                           // 1-indexed, 선택
+  severity: 'error' | 'warning' | 'info' | 'hint'
   message: string
-  line: number
+  source?: string                                           // 'tsc' / 'eslint' / 'inspection' / 'lsp:typescript' 등
 }
 
 /** UI/세션 표시용 세션 요약 정보 */

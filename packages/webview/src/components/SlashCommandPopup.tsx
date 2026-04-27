@@ -46,6 +46,11 @@ export default function SlashCommandPopup({ commands, filter, showFilterInput, o
   useEffect(() => { setSelectedIdx(0) }, [effectiveFilter])
 
   useEffect(() => {
+    const el = popupRef.current?.querySelector('.slash-item.selected') as HTMLElement | null
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIdx])
+
+  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Input 필드 안에서 상/하 방향키 누를 때 커서 이동 방지
       if (document.activeElement === inputRef.current && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {

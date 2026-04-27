@@ -14,6 +14,11 @@ export interface ModelInfo {
   id: string
   name: string
   contextWindow?: number
+  /**
+   * 모델 capability — 'completion' / 'vision' / 'tools' / 'thinking' 등.
+   * core 가 provider 별로 채워 보냄. 비어있으면 webview 가 모델 이름 패턴으로 fallback.
+   */
+  capabilities?: string[]
 }
 
 export interface ApprovalInfo {
@@ -26,9 +31,37 @@ export interface ApprovalInfo {
   approved?: boolean
 }
 
+/**
+ * 사용자 메시지에 첨부되는 멀티모달 콘텐츠.
+ * 현재는 이미지만 지원 (멀티모달 모델일 때만 전송됨).
+ */
+export interface Attachment {
+  kind: 'image'
+  mediaType: string  // 예: 'image/jpeg', 'image/png'
+  data: string       // base64 (no data: prefix)
+  filename?: string
+  /** UI 썸네일에 쓸 data URL (직접 string 으로 보관해 변환 비용 회피) */
+  dataUrl: string
+  /** 원본 픽셀 크기 — 첨부 카드에 "947×147" 형태로 노출 */
+  width?: number
+  height?: number
+  /** 원본 파일 크기 (bytes) */
+  size?: number
+}
+
+export interface VerifyInfo {
+  command: string
+  projectKind: string
+  passed: boolean
+  exitCode?: number
+  output?: string
+  durationMs?: number
+  timedOut?: boolean
+}
+
 export interface TimelineEntry {
   id: string
-  type: 'user' | 'stream' | 'tool_start' | 'tool_result' | 'thinking' | 'error' | 'approval'
+  type: 'user' | 'stream' | 'tool_start' | 'tool_result' | 'thinking' | 'error' | 'approval' | 'verify' | 'interrupted'
   source?: 'chat' | 'action'  // stream 타입 전용: 일반 채팅 vs 코드 액션 응답
   content?: string
   tool?: string
@@ -40,6 +73,16 @@ export interface TimelineEntry {
   isActive?: boolean       // 현재 진행 중 여부 (dot 애니메이션용)
   startedAt?: number       // 도구 시작 시간 (소요시간 계산용)
   approval?: ApprovalInfo  // approval 타입 전용
+  verify?: VerifyInfo      // verify 타입 전용
+  attachments?: Attachment[]  // user 타입 전용 (이미지 등 첨부)
+  interrupted?: boolean    // 사용자 abort 로 중단된 entry 표시
+}
+
+export interface ActivityState {
+  type: 'thinking' | 'streaming' | 'tool' | 'preparing'
+  label: string         // 사용자에게 보일 한국어 라벨 (예: "생각 중", "Bash 실행 중")
+  tool?: string         // type === 'tool' 인 경우 도구 이름
+  startedAt: number     // 활동 시작 ms (경과 시간 계산용)
 }
 
 export interface AppState {
@@ -49,16 +92,20 @@ export interface AppState {
   timeline: TimelineEntry[]
   sessions: SessionSummary[]
   isBusy: boolean
+  currentActivity: ActivityState | null  // 항상 살아있는 글로벌 상태 표시줄용
   showSettings: boolean
   showHistory: boolean
   contextUsage: { usedTokens: number; maxTokens: number; percentage: number }
   currentModel: string
+  /** core 가 provider API 로 받아온 현재 모델의 capability — 'vision' 등 */
+  currentModelCapabilities: string[]
   availableModels: ModelInfo[]
   slashFilter: string | null   // null = 팝업 닫힘
   showModelSelector: boolean
   isConfigured: boolean | null // null = 하직 로드 전, false = 미설정 온보딩
   settings: any | null         // CaptainSettings 타입 (store에서는 any 표기)
   fileSearchResults: string[]
+  pendingAttachments: Attachment[]   // 다음 메시지에 첨부될 이미지들
 }
 
 export type AppAction =
@@ -74,7 +121,7 @@ export type AppAction =
   | { type: 'TOGGLE_SETTINGS' }
   | { type: 'TOGGLE_HISTORY' }
   | { type: 'SET_CONTEXT_USAGE'; usage: AppState['contextUsage'] }
-  | { type: 'SET_MODEL'; modelId: string; contextWindow?: number }
+  | { type: 'SET_MODEL'; modelId: string; contextWindow?: number; capabilities?: string[] }
   | { type: 'SET_AVAILABLE_MODELS'; models: ModelInfo[] }
   | { type: 'SET_SLASH_FILTER'; filter: string | null }
   | { type: 'TOGGLE_MODEL_SELECTOR' }
@@ -82,6 +129,7 @@ export type AppAction =
   | { type: 'RENAME_SESSION'; sessionId: string; title: string }
   | { type: 'DELETE_SESSION'; sessionId: string }
   | { type: 'COMPLETE_THINKING'; durationMs: number; content?: string }
+  | { type: 'DROP_LAST_THINKING' }
   | { type: 'COMPLETE_TOOL'; tool: string; result: unknown }
   | { type: 'PRUNE_PREAMBLE' }
   | { type: 'SETTINGS_LOADED'; isConfigured: boolean; settings: any }
@@ -89,6 +137,13 @@ export type AppAction =
   | { type: 'RESOLVE_APPROVAL'; requestId: string; approved: boolean }
   | { type: 'ELEVATE_STREAM_TO_THINKING' }
   | { type: 'SET_FILE_SEARCH_RESULTS'; files: string[] }
+  | { type: 'SET_ACTIVITY'; activity: ActivityState }
+  | { type: 'CLEAR_ACTIVITY' }
+  | { type: 'COMPLETE_VERIFY'; verify: VerifyInfo }
+  | { type: 'MARK_INTERRUPTED' }
+  | { type: 'ADD_ATTACHMENTS'; attachments: Attachment[] }
+  | { type: 'REMOVE_ATTACHMENT'; index: number }
+  | { type: 'CLEAR_ATTACHMENTS' }
 
 export const initialState: AppState = {
   mode: 'ask',
@@ -97,16 +152,19 @@ export const initialState: AppState = {
   timeline: [],
   sessions: [],
   isBusy: false,
+  currentActivity: null,
   showSettings: false,
   showHistory: false,
   contextUsage: { usedTokens: 0, maxTokens: 32768, percentage: 0 },
   currentModel: 'qwen3-coder:30b',
+  currentModelCapabilities: [],
   availableModels: [],
   slashFilter: null,
   showModelSelector: false,
   isConfigured: null,
   settings: null,
   fileSearchResults: [],
+  pendingAttachments: [],
 }
 
 export function appReducer(state: AppState, action: AppAction): AppState {
@@ -115,7 +173,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return { ...state, mode: action.mode }
 
     case 'SET_BUSY':
-      return { ...state, isBusy: action.busy }
+      // busy 가 false 가 되면 글로벌 활동 표시도 함께 정리
+      return { ...state, isBusy: action.busy, ...(action.busy ? {} : { currentActivity: null }) }
 
     case 'STREAM_TOKEN': {
       // [흐름 7-b] App.tsx의 stream_chunk 핸들러로부터 호출됨
@@ -143,12 +202,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
 
     case 'STREAM_END': {
       // [흐름 7-c] stream_end 수신 → 마지막 stream 엔트리의 isStreaming을 false로 전환하고 isBusy 해제
+      // 단, 도구 호출이 이어지는 LLM 응답이면 isBusy/activity 는 유지 (다음 turn 까지)
       const last = state.timeline[state.timeline.length - 1]
       if (last?.type === 'stream') {
         const updated = { ...last, isStreaming: false }
-        return { ...state, isBusy: false, timeline: [...state.timeline.slice(0, -1), updated] }
+        return { ...state, timeline: [...state.timeline.slice(0, -1), updated] }
       }
-      return { ...state, isBusy: false }
+      return state
     }
 
     case 'ADD_TIMELINE':
@@ -185,10 +245,14 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'SET_CONTEXT_USAGE':
       return { ...state, contextUsage: action.usage }
 
-    case 'SET_MODEL':
+    case 'SET_MODEL': {
+      // capabilities 가 액션에 명시되면 우선 사용, 없으면 availableModels 에서 찾기
+      const fromList = state.availableModels.find(m => m.id === action.modelId)?.capabilities
+      const nextCaps = action.capabilities ?? fromList ?? state.currentModelCapabilities
       return {
         ...state,
         currentModel: action.modelId,
+        currentModelCapabilities: nextCaps,
         contextUsage: action.contextWindow
           ? { ...state.contextUsage, maxTokens: action.contextWindow }
           : state.contextUsage,
@@ -196,11 +260,19 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           ...state.settings,
           provider: { ...state.settings.provider, ollamaModel: action.modelId },
           ...(action.contextWindow ? { model: { ...state.settings.model, contextWindow: action.contextWindow } } : {})
-        } : state.settings
+        } : state.settings,
       }
+    }
 
-    case 'SET_AVAILABLE_MODELS':
-      return { ...state, availableModels: action.models }
+    case 'SET_AVAILABLE_MODELS': {
+      // 모델 목록 갱신 시 currentModel 의 capabilities 도 자동 반영
+      const matched = action.models.find(m => m.id === state.currentModel)?.capabilities
+      return {
+        ...state,
+        availableModels: action.models,
+        currentModelCapabilities: matched ?? state.currentModelCapabilities,
+      }
+    }
 
     case 'SET_SLASH_FILTER':
       return { ...state, slashFilter: action.filter, ...(action.filter !== null ? { showModelSelector: false } : {}) }
@@ -212,6 +284,7 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       return {
         ...state,
         isBusy: false,
+        currentActivity: null,
         timeline: [...state.timeline, {
           id: Date.now().toString(),
           type: 'error',
@@ -233,6 +306,18 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         return {
           ...state,
           timeline: [...state.timeline.slice(0, tIdx), updated, ...state.timeline.slice(tIdx + 1)]
+        }
+      }
+      return state
+    }
+
+    case 'DROP_LAST_THINKING': {
+      // 마지막 active thinking entry 가 있으면 제거 (짧아서 사용자에게 보여줄 가치 없음)
+      const tIdx = findLastIndex(state.timeline, e => e.type === 'thinking' && e.isActive === true)
+      if (tIdx >= 0) {
+        return {
+          ...state,
+          timeline: [...state.timeline.slice(0, tIdx), ...state.timeline.slice(tIdx + 1)]
         }
       }
       return state
@@ -321,22 +406,100 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case 'ELEVATE_STREAM_TO_THINKING': {
-      // 도구 호출 직전의 stream 엔트리를 thinking 엔트리로 변환
+      // 도구 호출 직전의 stream 이 짧은 preamble (안내문) 이면 thinking 으로 승격하지 않고 제거.
+      // 본문성 stream (분석/설명) 은 그대로 보존하여 Claude 와 같은 자연스러운 흐름 유지.
       const lastEntry = state.timeline[state.timeline.length - 1]
-      if (lastEntry?.type === 'stream' && !lastEntry.isStreaming && lastEntry.content?.trim()) {
-        const thinkingEntry: TimelineEntry = {
-          ...lastEntry,
-          type: 'thinking',
-          durationMs: Date.now() - lastEntry.timestamp,
-          isActive: false,
+      if (lastEntry?.type === 'stream' && !lastEntry.isStreaming) {
+        if (isPreamble(lastEntry.content)) {
+          return { ...state, timeline: state.timeline.slice(0, -1) }
         }
-        return { ...state, timeline: [...state.timeline.slice(0, -1), thinkingEntry] }
       }
       return state
     }
 
     case 'SET_FILE_SEARCH_RESULTS':
       return { ...state, fileSearchResults: action.files }
+
+    case 'SET_ACTIVITY': {
+      // 같은 type 으로 연속 갱신될 때는 startedAt 을 유지하여 경과 시간이 리셋되지 않도록 함.
+      // 도구가 바뀐 경우(tool 이름 변경) 는 새 startedAt 을 사용.
+      const prev = state.currentActivity
+      const next = action.activity
+      if (
+        prev &&
+        prev.type === next.type &&
+        prev.tool === next.tool &&
+        prev.label === next.label
+      ) {
+        return state
+      }
+      return { ...state, currentActivity: next }
+    }
+
+    case 'CLEAR_ACTIVITY':
+      // 매 토큰마다 dispatch 되어도 이미 null 이면 같은 state 를 반환하여 re-render 방지
+      if (state.currentActivity === null) return state
+      return { ...state, currentActivity: null }
+
+    case 'ADD_ATTACHMENTS':
+      return { ...state, pendingAttachments: [...state.pendingAttachments, ...action.attachments] }
+
+    case 'REMOVE_ATTACHMENT':
+      return {
+        ...state,
+        pendingAttachments: state.pendingAttachments.filter((_, i) => i !== action.index),
+      }
+
+    case 'CLEAR_ATTACHMENTS':
+      if (state.pendingAttachments.length === 0) return state
+      return { ...state, pendingAttachments: [] }
+
+    case 'MARK_INTERRUPTED': {
+      // 진행 중이던 entry 들(stream/tool_start/thinking/verify/approval) 을 interrupted 로 마크.
+      // 마지막에 별도 'interrupted' entry 를 추가하여 사용자에게 중단을 명시 + retry 옵션 제공.
+      const updated = state.timeline.map(e => {
+        if (e.isActive || (e.type === 'stream' && e.isStreaming)) {
+          return { ...e, isActive: false, isStreaming: false, interrupted: true }
+        }
+        return e
+      })
+      return {
+        ...state,
+        timeline: [...updated, {
+          id: Date.now().toString() + Math.random(),
+          type: 'interrupted',
+          timestamp: Date.now(),
+        }],
+        currentActivity: null,
+      }
+    }
+
+    case 'COMPLETE_VERIFY': {
+      // 마지막에 진행 중인 verify entry 가 있으면 완료 처리, 없으면 새로 추가.
+      // (skip 결과는 timeline 에 추가하지 않음)
+      if (action.verify.command === '(skip)') return state
+      const idx = findLastIndex(state.timeline, e => e.type === 'verify' && e.isActive === true)
+      if (idx >= 0) {
+        const updated: TimelineEntry = {
+          ...state.timeline[idx],
+          isActive: false,
+          durationMs: action.verify.durationMs,
+          verify: action.verify,
+        }
+        return { ...state, timeline: [...state.timeline.slice(0, idx), updated, ...state.timeline.slice(idx + 1)] }
+      }
+      return {
+        ...state,
+        timeline: [...state.timeline, {
+          id: Date.now().toString() + Math.random(),
+          type: 'verify',
+          isActive: false,
+          durationMs: action.verify.durationMs,
+          timestamp: Date.now(),
+          verify: action.verify,
+        }],
+      }
+    }
 
     default:
       return state

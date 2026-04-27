@@ -18,9 +18,15 @@ registerTool(
     type: 'function',
     function: {
       name: 'grep_tool',
-      description: `코드베이스에서 텍스트/패턴을 검색합니다. ripgrep(rg)을 우선 사용하고, 없으면 grep을 사용합니다.
-정규식을 지원하며, 파일 필터링과 주변 컨텍스트 줄 표시가 가능합니다.
-특정 파일을 읽기 전에 먼저 grep으로 위치를 파악하는 것을 권장합니다.`,
+      description: `**코드 위치 검색의 1순위 도구.** 함수·클래스·변수·문자열의 위치를 찾을 때 read_file 보다 먼저 사용하세요.
+
+ripgrep(rg) 우선 사용, 없으면 grep fallback. 정규식·주변 컨텍스트·파일 필터(\`include\`) 지원.
+
+전형적 워크플로우:
+1) grep_tool 로 위치 파악
+2) 결과의 file/line 을 read_file 의 startLine/endLine 으로 정밀 읽기
+
+여러 키워드를 동시에 찾아야 하면 grep_tool 을 한 응답에서 **여러 번 병렬 호출** 하세요.`,
       parameters: {
         type: 'object',
         properties: {

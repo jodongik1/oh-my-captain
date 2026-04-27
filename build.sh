@@ -51,10 +51,10 @@ ok()    { echo -e "${GREEN}✔${NC} $*"; }
 warn()  { echo -e "${YELLOW}⚠${NC} $*"; }
 err()   { echo -e "${RED}✘${NC} $*" >&2; }
 
-# gradle.properties에서 속성 값 읽기
+# gradle.properties에서 속성 값 읽기 (값에 '='가 포함돼도 안전)
 get_gradle_property() {
     local key="$1"
-    grep "^${key}=" "$INTELLIJ_DIR/gradle.properties" 2>/dev/null | cut -d'=' -f2 || echo ""
+    grep "^${key}=" "$INTELLIJ_DIR/gradle.properties" 2>/dev/null | sed 's/^[^=]*=//' || echo ""
 }
 
 # 단계 증가
@@ -124,8 +124,11 @@ install_deps() {
     step_increment
     header "의존성 설치"
     step_start
-    log "pnpm install ..."
-    (cd "$ROOT_DIR" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install)
+    log "pnpm install --frozen-lockfile ..."
+    if ! (cd "$ROOT_DIR" && pnpm install --frozen-lockfile); then
+        warn "frozen-lockfile 실패 — lockfile을 갱신해 재시도합니다 (drift 가능성 점검 필요)"
+        (cd "$ROOT_DIR" && pnpm install)
+    fi
     step_end "의존성 설치 완료"
 }
 
@@ -281,8 +284,6 @@ CMD="${1:-all}"
 
 case "$CMD" in
     build)
-        TOTAL_STEPS=3
-        CURRENT_STEP=0
         build_all
         ;;
     run)
@@ -315,7 +316,8 @@ case "$CMD" in
 
         log "5. IntelliJ 플러그인 실행..."
         # 종료 시 백그라운드 프로세스 확실한 정리 (SIGINT 포함)
-        trap "kill -TERM $VITE_PID $CORE_PID 2>/dev/null" EXIT INT TERM
+        # single-quote로 감싸 trap 발동 시점에 PID를 평가, 빈 PID로 인한 usage 에러 회피
+        trap 'kill -TERM "${VITE_PID:-}" "${CORE_PID:-}" 2>/dev/null || true' EXIT INT TERM
         
         (cd "$INTELLIJ_DIR" && ./gradlew runIde -Domc.dev=true)
         ;;

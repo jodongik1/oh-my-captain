@@ -48,6 +48,19 @@ export class OpenAIProvider implements LLMProvider {
           }))
         }
       }
+      // user 메시지의 이미지 첨부 → OpenAI multipart (image_url + text)
+      if (m.role === 'user' && (m as { attachments?: { mediaType: string; data: string }[] }).attachments?.length) {
+        const atts = (m as { attachments: { mediaType: string; data: string }[] }).attachments
+        const parts: OpenAI.Chat.ChatCompletionContentPart[] = []
+        for (const a of atts) {
+          parts.push({
+            type: 'image_url',
+            image_url: { url: `data:${a.mediaType};base64,${a.data}` },
+          })
+        }
+        if (m.content) parts.push({ type: 'text', text: m.content })
+        return { role: 'user' as const, content: parts }
+      }
       return { role: m.role as any, content: m.content }
     })
 
@@ -112,6 +125,15 @@ export class OpenAIProvider implements LLMProvider {
       : undefined
 
     return { role: 'assistant', content: fullContent, tool_calls: toolCalls }
+  }
+
+  async getCapabilities(modelId: string): Promise<string[]> {
+    // OpenAI /v1/models 는 capability 정보 미노출. 모델 이름 패턴으로 추론.
+    const m = modelId.toLowerCase()
+    const caps: string[] = ['completion', 'tools']
+    if (/gpt-4o|gpt-4-turbo|gpt-4-vision|gpt-5|o1|o3|o4/.test(m)) caps.push('vision')
+    if (/o1|o3|o4|gpt-5/.test(m)) caps.push('thinking')
+    return caps
   }
 
   async complete(prompt: string): Promise<string> {

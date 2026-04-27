@@ -35,10 +35,16 @@ export class OllamaProvider implements LLMProvider {
 
     const ollamaMessages = messages.map(m => {
       if (m.role === 'tool') {
-        // tool_call_id를 유지해야 LLM이 어떤 도구의 응답인지 추적할 수 있습니다.
-        // Ollama API 스펙에 맞추어(필요하다면 role:'tool'을 유지하거나, 버전에 따라 user 등으로 처리)
-        // 최소한 우리가 전달받은 데이터는 유지합니다.
-        return { role: 'tool' as const, content: m.content } // TODO: Ollama Native Tool Calling에서 tool_call_id를 어떻게 받는지 확인 필요. 현재는 ollama 라이브러리 스펙이 제한적일 수 있으나 향후 확장을 위해 일단 유지
+        return { role: 'tool' as const, content: m.content }
+      }
+      // user 메시지의 이미지 첨부 → Ollama 의 messages[].images 배열 (base64)
+      if (m.role === 'user' && (m as { attachments?: { mediaType: string; data: string }[] }).attachments?.length) {
+        const atts = (m as { attachments: { mediaType: string; data: string }[] }).attachments
+        return {
+          role: 'user' as const,
+          content: m.content,
+          images: atts.map(a => a.data),
+        } as unknown as Message
       }
       return m
     })
@@ -159,6 +165,48 @@ export class OllamaProvider implements LLMProvider {
     })
     return response.message.content
   }
+
+  /**
+   * Ollama 의 /api/show 응답에서 capabilities 를 동적으로 추출.
+   * - 신버전 Ollama: 응답에 명시적 `capabilities: ["completion", "vision", ...]` 배열 포함
+   * - 구버전 fallback: `details.families` 에 'clip' 또는 'mllama' 가 있으면 vision
+   * 호출 실패 시 빈 배열 반환 (호출자가 패턴 fallback 가능).
+   */
+  async getCapabilities(modelId: string): Promise<string[]> {
+    try {
+      const showResp = await this.client.show({ model: modelId } as { model: string })
+      const caps = new Set<string>()
+
+      // 1) 명시적 capabilities 배열 (Ollama 0.5+)
+      const explicit = (showResp as unknown as { capabilities?: string[] }).capabilities
+      if (Array.isArray(explicit)) {
+        for (const c of explicit) caps.add(c)
+      }
+
+      // 2) families 검사 (구버전 호환)
+      const details = (showResp as { details?: { families?: string[] } }).details
+      const families = details?.families
+      if (Array.isArray(families)) {
+        if (families.some(f => /^(clip|mllama|siglip|paligemma)$/i.test(f))) {
+          caps.add('vision')
+        }
+      }
+
+      // 3) projector_info 가 있으면 vision (멀티모달 projector 가 있다는 뜻)
+      if ((showResp as unknown as { projector_info?: unknown }).projector_info) {
+        caps.add('vision')
+      }
+
+      // completion 은 모든 ollama 모델 기본 — 명시 안되어 있어도 추가
+      if (!caps.has('completion')) caps.add('completion')
+
+      log.debug(`Ollama capabilities for ${modelId}: ${Array.from(caps).join(', ')}`)
+      return Array.from(caps)
+    } catch (e) {
+      log.warn(`/api/show 실패 for ${modelId} — capability 추론 fallback (${(e as Error).message})`)
+      return []
+    }
+  }
 }
 
 function stripToolCallXml(text: string): string {
@@ -184,7 +232,7 @@ export async function fetchOllamaModelInfo(
   baseUrl: string,
   modelName: string,
   apiKey?: string
-): Promise<{ contextWindow: number }> {
+): Promise<{ contextWindow: number; capabilities: string[] }> {
   const res = await fetch(`${baseUrl}/api/show`, {
     method: 'POST',
     headers: {
@@ -195,15 +243,34 @@ export async function fetchOllamaModelInfo(
     signal: AbortSignal.timeout(10_000)
   })
   if (!res.ok) throw new Error(`모델 정보 조회 실패: ${res.status}`)
-  const data = await res.json() as { model_info?: Record<string, unknown> }
+  const data = await res.json() as {
+    model_info?: Record<string, unknown>
+    capabilities?: string[]
+    details?: { families?: string[] }
+    projector_info?: unknown
+  }
 
+  // contextWindow
   const arch = data.model_info?.['general.architecture'] as string | undefined
   const contextKey = arch ? `${arch}.context_length` : undefined
   const contextWindow = contextKey
     ? (data.model_info?.[contextKey] as number | undefined) ?? 32768
     : 32768
 
-  return { contextWindow }
+  // capabilities — Ollama 신버전의 명시적 배열 + 구버전 fallback (families/projector_info)
+  const caps = new Set<string>()
+  if (Array.isArray(data.capabilities)) {
+    for (const c of data.capabilities) caps.add(c)
+  }
+  if (Array.isArray(data.details?.families)) {
+    if (data.details!.families!.some(f => /^(clip|mllama|siglip|paligemma)$/i.test(f))) {
+      caps.add('vision')
+    }
+  }
+  if (data.projector_info) caps.add('vision')
+  if (!caps.has('completion')) caps.add('completion')
+
+  return { contextWindow, capabilities: Array.from(caps) }
 }
 
 export async function testOllamaConnection(baseUrl: string, apiKey?: string): Promise<boolean> {

@@ -41,18 +41,26 @@
   --bg-active:      rgba(255, 255, 255, 0.06);
   --bg-input:       #1a1a1a;
 
-  --fg-primary:     #e0e0e0;
-  --fg-secondary:   #a0a0a0;
-  --fg-muted:       #666;
-  --fg-faint:       #444;
+  /* ── Foreground (텍스트) — WCAG 가독성 향상 ──
+     #1a1a1a 배경 기준 contrast:
+       primary   #ededed = 14.7:1  (본문)
+       secondary #c4c4c4 =  9.6:1  (보조 라벨)
+       muted     #8a8a8a =  5.4:1  (메타·캡션, AA 통과)
+       faint     #6a6a6a =  3.4:1  (placeholder·약한 hint, hierarchy 유지)
+  */
+  --fg-primary:     #ededed;
+  --fg-secondary:   #c4c4c4;
+  --fg-muted:       #8a8a8a;
+  --fg-faint:       #6a6a6a;
 
-  --border:         #2a2a2a;
-  --border-subtle:  #222;
+  /* 보더는 살짝 강화하여 면 구분이 흐려지지 않도록 */
+  --border:         #353535;
+  --border-subtle:  #2c2c2c;
 
   /* ── Mode colors ── */
   --mode-plan:      #3b82f6;
   --mode-ask:       #d97706;
-  --mode-auto:      #666;
+  --mode-auto:      #8a8a8a;
 
   /* ── Semantic colors ── */
   --tool-read:      #4ec994;
@@ -360,7 +368,7 @@ body {
   bottom: -10px; /* 다음 항목의 도트 위치까지 연결 */
   left: 7.5px; /* 도트 중앙 (left: 4px + 4px) */
   width: 1px;
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.13);
   z-index: 1;
 }
 
@@ -373,6 +381,16 @@ body {
 .timeline-entry.entry-user {
   margin-top: 16px;
   margin-bottom: 2px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--bg-primary);
+  padding-top: 8px;
+  padding-bottom: 4px;
+}
+
+.timeline-entry.entry-user .timeline-content {
+  padding-left: 0;
 }
 
 /* ── Timeline Dot System ── */
@@ -431,7 +449,7 @@ body {
 
 /* ── User message ── */
 .user-message-block {
-  background: transparent;
+  background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
   /* border-left 제거 */
   border-radius: 6px;
@@ -531,6 +549,33 @@ body {
   font-size: 0.9em;
   color: #e28e57;
 }
+.markdown-body strong {
+  color: #f5f5f5;
+  font-weight: 700;
+}
+.markdown-body em {
+  color: var(--fg-primary);
+  font-style: italic;
+}
+.markdown-body blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--mode-plan, #3b82f6);
+  background: rgba(59, 130, 246, 0.06);
+  color: var(--fg-secondary);
+  border-radius: 0 4px 4px 0;
+}
+.markdown-body blockquote p:last-child { margin-bottom: 0; }
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 12px 0;
+}
+.markdown-body a {
+  color: #61afef;
+  text-decoration: none;
+}
+.markdown-body a:hover { text-decoration: underline; }
 
 /* ── Markdown Table ── */
 .table-wrapper {
@@ -747,6 +792,461 @@ body {
 }
 
 .error-text { color: var(--tool-error); }
+
+/* ── Context Usage (입력창 footer 의 컨텍스트 사용 progress) ── */
+.context-usage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 0 6px;
+  height: 22px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  user-select: none;
+}
+.context-bar {
+  width: 64px;
+  height: 4px;
+  background: var(--bg-hover);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.context-fill {
+  height: 100%;
+  background: var(--fg-muted);
+  border-radius: 2px;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+.context-pct {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  min-width: 28px;
+  text-align: right;
+}
+.context-usage.ctx-warn .context-fill { background: var(--mode-ask, #d97706); }
+.context-usage.ctx-warn .context-pct  { color: var(--mode-ask, #d97706); }
+.context-usage.ctx-critical .context-fill { background: var(--tool-error, #e06c75); }
+.context-usage.ctx-critical .context-pct  { color: var(--tool-error, #e06c75); }
+
+/* ── Verify Row (자동 검증 결과) ── */
+.verify-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.verify-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.verify-row.verify-pass .verify-icon { color: var(--tool-read, #4ec994); }
+.verify-row.verify-fail .verify-icon { color: var(--tool-error, #e06c75); }
+.verify-label {
+  color: var(--fg-primary);
+  font-weight: 500;
+}
+.verify-row.verify-pass .verify-label { color: var(--tool-read, #4ec994); }
+.verify-row.verify-fail .verify-label { color: var(--tool-error, #e06c75); }
+.verify-cmd {
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.verify-elapsed {
+  margin-left: auto;
+  color: var(--fg-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.verify-toggle {
+  color: var(--fg-muted);
+  font-size: 10px;
+}
+.verify-output {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--fg-secondary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.verify-active .verify-label { color: var(--mode-plan, #3b82f6); }
+
+/* ── 입력창 첨부 카드 strip (Claude 스타일) ── */
+.attachment-strip {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 20px 6px;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+}
+.attachment-card {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+  user-select: none;
+  max-width: 280px;
+}
+.attachment-card:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+.attachment-card-thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+}
+.attachment-card-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.attachment-card-name {
+  font-size: 12.5px;
+  color: var(--fg-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.attachment-card-dims {
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+.attachment-card-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  color: var(--fg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.attachment-card:hover .attachment-card-remove { opacity: 1; }
+.attachment-card-remove:hover {
+  background: var(--tool-error, #e06c75);
+  color: #fff;
+  border-color: var(--tool-error, #e06c75);
+}
+
+/* ── 메시지 행의 첨부 썸네일 ── */
+.user-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.user-message-thumb {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  cursor: zoom-in;
+  transition: border-color 0.12s ease;
+}
+.user-message-thumb:hover { border-color: var(--border); }
+
+/* ── Image Preview Modal ── */
+.image-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 32px;
+  cursor: zoom-out;
+  animation: image-preview-fade-in 160ms ease-out;
+}
+.image-preview-img {
+  max-width: 100%;
+  max-height: calc(100vh - 120px);
+  object-fit: contain;
+  border-radius: 6px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  cursor: default;
+  background: var(--bg-elevated);
+}
+.image-preview-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg-primary);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+.image-preview-close:hover {
+  background: rgba(255, 255, 255, 0.18);
+  transform: scale(1.05);
+}
+.image-preview-meta {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: default;
+}
+.image-preview-name {
+  color: var(--fg-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.image-preview-dims {
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+@keyframes image-preview-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── + popup 의 항목 비활성 + 보조 텍스트 ── */
+.add-context-item.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.add-context-item.disabled:hover { background: transparent; }
+.add-context-hint {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--fg-faint);
+}
+
+/* ── 사용자 abort 표시 (interrupted 행) ── */
+.interrupted-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  margin: 4px 0;
+  font-size: 12.5px;
+  color: var(--fg-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed var(--border-subtle);
+  border-radius: 6px;
+}
+.interrupted-text {
+  flex: 1;
+  color: var(--fg-secondary);
+}
+.interrupted-retry {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  color: var(--fg-primary);
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.interrupted-retry:hover {
+  border-color: var(--mode-plan, #3b82f6);
+  color: var(--mode-plan, #3b82f6);
+  background: rgba(59, 130, 246, 0.08);
+}
+/* interrupted 마크된 entry 들의 시각적 약화 */
+.timeline-entry .stream-row[data-interrupted='true'],
+.timeline-entry [data-interrupted='true'] {
+  opacity: 0.6;
+}
+
+/* ── Plan Completion CTA (Plan 모드 결과 다음의 실행 전환 카드) ── */
+.plan-completion-entry::after { display: none; }
+.plan-completion-card {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 12px;
+  margin: 6px 0 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  animation: activity-fade-in 200ms ease-out;
+}
+.plan-completion-text {
+  flex: 1;
+  min-width: 200px;
+  font-size: 12.5px;
+  color: var(--fg-secondary);
+}
+.plan-completion-actions {
+  display: flex;
+  gap: 6px;
+}
+.plan-cta-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--fg-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.plan-cta-btn:hover {
+  background: var(--bg-hover);
+}
+.plan-cta-ask:hover  { border-color: var(--mode-ask, #d97706); color: var(--mode-ask, #d97706); }
+.plan-cta-auto:hover { border-color: var(--mode-auto, #888); color: var(--fg-primary); }
+
+/* ── Activity Indicator (timeline 마지막 entry) ──
+   timeline-entry / timeline-dot / timeline-content 를 그대로 재사용해
+   다른 entry 와 dot 컬럼·들여쓰기·간격이 자동으로 정렬된다.
+   여기서는 라벨 우측에 esc 버튼을 가로 배치하기 위한 inline 컨테이너만 정의. */
+.timeline-entry-activity {
+  min-height: 28px;
+  /* 다른 entry 와 동일한 들여쓰기·track-line 을 그대로 상속 */
+}
+.timeline-entry-activity .activity-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--fg-secondary);
+  animation: activity-fade-in 180ms ease-out;
+}
+.timeline-entry-activity .activity-label {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--fg-secondary);
+  font-weight: 400;
+}
+.timeline-entry-activity .activity-elapsed {
+  color: var(--fg-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.timeline-entry-activity .activity-abort {
+  margin-left: 6px;
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--fg-faint);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  border-radius: 4px;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.timeline-entry-activity .activity-abort:hover {
+  color: var(--fg-secondary);
+  background: var(--bg-hover);
+}
+/* 활동 표시는 마지막 entry 처럼 다음 항목으로 이어지는 선이 필요 없음 */
+.timeline-entry-activity::after { display: none; }
+
+@keyframes activity-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 좁은 화면 대응 */
+@media (max-width: 480px) {
+  .timeline-entry-activity .activity-abort { display: none; }
+}
+
+/* ── Skipped (도구 차단) ── */
+.tool-block.skipped {
+  opacity: 0.55;
+  border-color: var(--border-subtle);
+}
+.tool-block.skipped .tool-title {
+  color: var(--fg-muted);
+}
+.tool-compact.skipped {
+  opacity: 0.55;
+}
+.tool-compact.skipped .tool-compact-title {
+  color: var(--fg-muted);
+}
+
+/* ── Listing / Glob 결과 미리보기 ── */
+.listing-preview {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-secondary);
+  margin: 0;
+  padding: 0;
+  white-space: pre;
+  overflow-x: auto;
+  line-height: 1.55;
+}
+.tap-to-expand {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  cursor: pointer;
+  user-select: none;
+}
+.tap-to-expand:hover { color: var(--fg-primary); }
 
 /* ── Compact Tool Row (Read, List Dir) ── */
 .tool-compact {
@@ -1602,21 +2102,6 @@ textarea.input-field:disabled {
   to { transform: rotate(360deg); }
 }
 
-.streaming-cursor {
-  display: inline-block;
-  color: var(--fg-primary);
-  font-size: 16px;
-  line-height: 1;
-  margin-left: 1px;
-  animation: cursor-blink 1s step-end infinite;
-  vertical-align: text-bottom;
-}
-
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
 .busy-indicator {
   display: inline-block;
   width: 12px;
@@ -1822,8 +2307,8 @@ textarea.input-field:disabled {
 }
 
 .diff-gutter {
-  background-color: #1a1a1a !important;
-  color: #555 !important;
+  background-color: var(--bg-primary) !important;
+  color: var(--fg-muted) !important;
   border-right: 1px solid var(--border) !important;
   min-width: 40px !important;
   text-align: right !important;
@@ -1990,10 +2475,18 @@ textarea.input-field:disabled {
 }
 
 .mention-pill {
-  display: inline-block;
+  /* overlay 의 멘션 표시.
+     textarea 의 raw 글자(@src/...) 폭과 정확히 일치해야 caret 위치가 어긋나지 않으므로
+     - display: inline (inline-block 은 baseline·advance 가 약간 다름)
+     - padding/border 0 (글자 폭 변형 금지)
+     - font-weight inherit (weight 차이로 글자 advance 변동 방지) */
+  display: inline;
   background-color: rgba(59, 130, 246, 0.2);
   color: #60a5fa;
-  border-radius: 4px;
-  padding: 0 4px;
-  font-weight: 500;
+  border-radius: 3px;
+  padding: 0;
+  margin: 0;
+  font-weight: inherit;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }

@@ -16,7 +16,7 @@ export function registerModelHandlers(state: CoreState) {
         models.map(async (id) => {
           try {
             const info = await fetchOllamaModelInfo(baseUrl, id, apiKey)
-            return { id, name: id, contextWindow: info.contextWindow }
+            return { id, name: id, contextWindow: info.contextWindow, capabilities: info.capabilities }
           } catch {
             return { id, name: id }
           }
@@ -40,7 +40,7 @@ export function registerModelHandlers(state: CoreState) {
         models.map(async (id) => {
           try {
             const info = await fetchOllamaModelInfo(ollamaBaseUrl, id, ollamaApiKey || undefined)
-            return { id, name: id, contextWindow: info.contextWindow }
+            return { id, name: id, contextWindow: info.contextWindow, capabilities: info.capabilities }
           } catch {
             return { id, name: id }
           }
@@ -63,7 +63,11 @@ export function registerModelHandlers(state: CoreState) {
       )
       state.settings.model.contextWindow = info.contextWindow
       applySettings(state, state.settings, { save: true })
-      send({ id: msg.id, type: 'model_switched', payload: { modelId, contextWindow: info.contextWindow } })
+      send({
+        id: msg.id,
+        type: 'model_switched',
+        payload: { modelId, contextWindow: info.contextWindow, capabilities: info.capabilities },
+      })
     } catch (e: any) {
       send({ id: msg.id, type: 'error', payload: { message: `모델 전환 실패: ${e.message}`, retryable: false } })
     }

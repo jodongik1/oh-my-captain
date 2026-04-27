@@ -1,22 +1,33 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import type { TimelineEntry } from '../store'
+import type { TimelineEntry, ActivityState, Mode } from '../store'
 import StreamRow from './timeline/StreamRow'
 import ToolRow from './timeline/ToolRow'
 import ThinkingRow from './timeline/ThinkingRow'
 import ErrorRow from './timeline/ErrorRow'
 import BashRow from './timeline/BashRow'
 import ApprovalRow from './timeline/ApprovalRow'
+import VerifyRow from './timeline/VerifyRow'
+import ActivityIndicator from './ActivityIndicator'
+import PlanCompletionAction from './PlanCompletionAction'
+import ImagePreviewModal from './ImagePreviewModal'
+import type { Attachment } from '../store'
 
 interface TimelineProps {
   entries: TimelineEntry[]
   isBusy?: boolean
+  currentActivity?: ActivityState | null
+  mode?: Mode
   onApprovalResponse?: (requestId: string, approved: boolean) => void
+  onAbort?: () => void
+  onExecutePlan?: (mode: 'ask' | 'auto') => void
+  onRetryLastUser?: () => void
 }
 
-export default function Timeline({ entries, isBusy, onApprovalResponse }: TimelineProps) {
+export default function Timeline({ entries, isBusy, currentActivity, mode, onApprovalResponse, onAbort, onExecutePlan, onRetryLastUser }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const isAtBottomRef = useRef(true)
+  const [previewAttachment, setPreviewAttachment] = useState<Attachment | null>(null)
 
   const lastEntry = entries[entries.length - 1]
   const streamingContentLength =
@@ -35,56 +46,50 @@ export default function Timeline({ entries, isBusy, onApprovalResponse }: Timeli
     if (!isAtBottomRef.current) return
     const behavior = streamingContentLength > 0 ? 'instant' : 'smooth'
     bottomRef.current?.scrollIntoView({ behavior })
-  }, [entries.length, isBusy, streamingContentLength])
+  }, [entries.length, isBusy, streamingContentLength, currentActivity?.label, currentActivity?.startedAt])
 
   return (
     <div className="timeline" ref={scrollRef} onScroll={handleScroll}>
       <div className="timeline-track-container">
         {entries.map(entry => {
-          // ── Dot 상태 결정 ──
-          let dotClass = 'dot-inactive'   // 기본: 회색
-          
-          if (entry.isActive || entry.isStreaming) {
-            dotClass = 'dot-active'       // 진행 중: 파란색 깜박임
-          } else if (entry.type === 'error') {
-            dotClass = 'dot-error'        // 에러: 빨간색
-          } else if (entry.type === 'tool_result' || (entry.type === 'tool_start' && !entry.isActive)) {
-            dotClass = 'dot-success'      // 완료된 도구: 녹색
-          }
-
-          let showDot = true
+          // tool_result 는 별도 entry 로 렌더 안 함 (tool_start 가 result 까지 표시)
           if (entry.type === 'tool_result') return null
 
+          // ── Dot 상태 결정 ──
+          let dotClass = 'dot-inactive'
+          let showDot = true
+
           if (entry.type === 'user') {
-            showDot = false  // 사용자 메시지는 dot 없음
+            showDot = false
           } else if (entry.type === 'tool_start') {
             if (entry.isActive) {
-              dotClass = 'dot-active'  // 진행 중: 깜박이는 파란색
+              dotClass = 'dot-active'
             } else {
-              // 완료됨 — 성공/실패 판별
               const r = entry.result as any
-              if (entry.tool === 'run_terminal') {
-                const failed = r && (r.exitCode !== 0 || r.error)
-                dotClass = failed ? 'dot-error' : 'dot-success'
-              } else if (r && r.error) {
-                dotClass = 'dot-error'
-              } else {
-                dotClass = 'dot-success'
-              }
+              if (r && r.__toolSkipped) dotClass = 'dot-inactive'
+              else if (entry.tool === 'run_terminal') {
+                dotClass = (r && (r.exitCode !== 0 || r.error)) ? 'dot-error' : 'dot-success'
+              } else if (r && r.error) dotClass = 'dot-error'
+              else dotClass = 'dot-success'
             }
           } else if (entry.type === 'thinking') {
             dotClass = entry.isActive ? 'dot-active' : 'dot-inactive'
+          } else if (entry.type === 'verify') {
+            if (entry.isActive) dotClass = 'dot-active'
+            else dotClass = entry.verify?.passed ? 'dot-success' : 'dot-error'
           } else if (entry.type === 'stream') {
             dotClass = entry.isStreaming ? 'dot-active' : 'dot-inactive'
           } else if (entry.type === 'error') {
             dotClass = 'dot-error'
           } else if (entry.type === 'approval') {
-            if (entry.isActive) {
-              dotClass = 'dot-active'
-            } else {
-              dotClass = entry.approval?.approved ? 'dot-success' : 'dot-error'
-            }
+            if (entry.isActive) dotClass = 'dot-active'
+            else dotClass = entry.approval?.approved ? 'dot-success' : 'dot-error'
+          } else if (entry.type === 'interrupted') {
+            dotClass = 'dot-inactive'
           }
+
+          // 사용자 abort 로 중단된 entry 는 회색으로 통일 (위 결정을 덮어씀)
+          if (entry.interrupted) dotClass = 'dot-inactive'
 
           return (
             <div key={entry.id} className={`timeline-entry ${entry.type === 'user' ? 'entry-user' : ''}`}>
@@ -94,12 +99,26 @@ export default function Timeline({ entries, isBusy, onApprovalResponse }: Timeli
               <div className="timeline-content">
                 {entry.type === 'user' && (
                   <div className="user-message-block">
-                    <div className="user-message-text">{entry.content}</div>
+                    {entry.attachments && entry.attachments.length > 0 && (
+                      <div className="user-message-attachments">
+                        {entry.attachments.map((att, i) => (
+                          <img
+                            key={i}
+                            src={att.dataUrl}
+                            alt={att.filename ?? 'attachment'}
+                            className="user-message-thumb"
+                            title={att.filename ?? '클릭하여 확대'}
+                            onClick={() => setPreviewAttachment(att)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {entry.content && <div className="user-message-text">{entry.content}</div>}
                     <UserMessageCopyButton content={entry.content ?? ''} />
                   </div>
                 )}
                 {entry.type === 'stream' && (
-                  <StreamRow content={entry.content ?? ''} isStreaming={entry.isStreaming} syntaxHighlight={true} />
+                  <StreamRow content={entry.content ?? ''} syntaxHighlight={true} />
                 )}
                 {entry.type === 'tool_start' && entry.tool === 'run_terminal' && (
                   <BashRow
@@ -124,6 +143,28 @@ export default function Timeline({ entries, isBusy, onApprovalResponse }: Timeli
                     isActive={entry.isActive}
                   />
                 )}
+                {entry.type === 'verify' && entry.verify && (
+                  <VerifyRow
+                    verify={entry.verify}
+                    isActive={entry.isActive}
+                    durationMs={entry.durationMs}
+                  />
+                )}
+                {entry.type === 'interrupted' && (
+                  <div className="interrupted-row">
+                    <span className="interrupted-text">사용자가 작업을 중단했습니다.</span>
+                    {onRetryLastUser && (
+                      <button
+                        type="button"
+                        className="interrupted-retry"
+                        onClick={onRetryLastUser}
+                        title="마지막 메시지를 다시 전송"
+                      >
+                        다시 시도
+                      </button>
+                    )}
+                  </div>
+                )}
                 {entry.type === 'error' && (
                   <ErrorRow message={entry.content ?? ''} />
                 )}
@@ -138,8 +179,23 @@ export default function Timeline({ entries, isBusy, onApprovalResponse }: Timeli
             </div>
           )
         })}
+        {/* Timeline 의 마지막에 활동 표시줄 — 다음 응답이 등장할 자리 */}
+        <ActivityIndicator
+          activity={currentActivity ?? null}
+          isBusy={!!isBusy}
+          onAbort={onAbort}
+        />
+        {/* Plan 모드 + 작업 종료 + 마지막이 계획 응답일 때 → 실행 모드 전환 CTA */}
+        {!isBusy && mode === 'plan' && onExecutePlan && (() => {
+          const last = entries[entries.length - 1]
+          if (last?.type !== 'stream' || !last.content?.trim()) return null
+          return <PlanCompletionAction onExecute={onExecutePlan} />
+        })()}
       </div>
       <div ref={bottomRef} />
+      {previewAttachment && (
+        <ImagePreviewModal attachment={previewAttachment} onClose={() => setPreviewAttachment(null)} />
+      )}
     </div>
   )
 }

@@ -38,7 +38,9 @@ registerTool(
         required: ['content'],
       },
     },
-    category: 'write',
+    // save_memory 는 코드/파일 수정이 아닌 학습 노트 누적이므로 readonly 분류로 처리.
+    // plan 모드에서도 LLM 이 자유롭게 메모리에 발견사항을 기록할 수 있게 함.
+    category: 'readonly',
     concurrencySafe: true,
   },
   async (rawArgs, host: HostAdapter) => {

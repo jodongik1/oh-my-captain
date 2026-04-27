@@ -17,7 +17,19 @@ registerTool(
     type: 'function',
     function: {
       name: 'run_terminal',
-      description: '셸 명령어를 실행하고 stdout/stderr를 반환합니다.',
+      description: `셸 명령어를 실행하고 stdout/stderr 를 반환합니다.
+
+✅ **readonly 명령은 자유롭게 사용 가능** (사용자 승인 불필요, 모든 모드):
+- 탐색: ls, find, tree
+- 읽기: cat, head, tail, less, file, stat, wc
+- 검색: grep, rg
+- Git 조회: git status, git log, git diff, git show, git branch, git remote, git blame
+- 환경: pwd, which, env, uname, date
+
+광범위 분석 시 \`find . -maxdepth 3 -name "*.ts" -not -path "*/node_modules/*"\` 한 번이 list_dir 10회보다 효율적입니다.
+glob_tool 과 함께 첫 turn 에 병렬 호출하세요.
+
+⚠️ 파괴적 명령(rm, git push --force, git reset --hard 등) 은 사용자 승인이 필요합니다.`,
       parameters: {
         type: 'object',
         properties: {

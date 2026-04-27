@@ -8,7 +8,6 @@ import MermaidBlock from './MermaidBlock'
 
 interface StreamRowProps {
   content: string
-  isStreaming?: boolean
   syntaxHighlight?: boolean  // true = 코드 액션 응답 (syntax highlighting 활성화)
 }
 
@@ -29,7 +28,7 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-export default function StreamRow({ content, isStreaming, syntaxHighlight }: StreamRowProps) {
+export default function StreamRow({ content, syntaxHighlight }: StreamRowProps) {
   return (
     <div className="stream-row markdown-body">
       <ReactMarkdown
@@ -70,7 +69,6 @@ export default function StreamRow({ content, isStreaming, syntaxHighlight }: Str
       >
         {content}
       </ReactMarkdown>
-      {isStreaming && <span className="streaming-cursor">▍</span>}
     </div>
   )
 }

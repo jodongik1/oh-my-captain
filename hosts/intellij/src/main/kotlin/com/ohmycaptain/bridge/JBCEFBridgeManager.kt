@@ -7,6 +7,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.testFramework.LightVirtualFile
 import com.intellij.ui.jcef.JBCefBrowser
 import com.ohmycaptain.ipc.IpcClient
@@ -160,9 +161,68 @@ class JBCEFBridgeManager(
                 postToBrowser("approval_request", enrichedPayload)
             }
             "open_in_editor" -> handleOpenInEditor(msg)
+            "invoke_action" -> handleInvokeAction(msg)
             // 나머지는 그대로 WebView로 전달
             else -> postToBrowser(msg["type"] as String, msg["payload"] ?: emptyMap<String, Any>())
         }
+    }
+
+    /**
+     * Webview 슬래시 명령(예: /explain) → 우클릭 메뉴와 동일한 code_action IPC 발사.
+     * 현재 active editor + selection 을 BaseCodeAction 과 동일한 형태로 패키징한다.
+     * 에디터가 없으면 사용자에게 안내.
+     */
+    private fun handleInvokeAction(msg: Map<String, Any?>) {
+        val actionId = (msg["payload"] as? Map<*, *>)?.get("actionId") as? String ?: return
+        val actionType = ACTION_ID_TO_TYPE[actionId] ?: run {
+            postError("알 수 없는 액션입니다: $actionId")
+            return
+        }
+
+        ApplicationManager.getApplication().invokeLater {
+            val editor = FileEditorManager.getInstance(project).selectedTextEditor
+            if (editor == null) {
+                postError("열린 에디터가 없습니다. 코드 파일을 먼저 열고 다시 시도해주세요.")
+                return@invokeLater
+            }
+            val psiFile = PsiDocumentManager.getInstance(project).getPsiFile(editor.document)
+            if (psiFile == null) {
+                postError("PSI 파일을 찾을 수 없습니다.")
+                return@invokeLater
+            }
+
+            val selectedText = editor.selectionModel.selectedText ?: psiFile.text
+            val selectionStart = editor.selectionModel.selectionStartPosition
+            val selectionEnd = editor.selectionModel.selectionEndPosition
+
+            val payload = mapOf(
+                "action" to actionType,
+                "code" to selectedText,
+                "filePath" to (psiFile.virtualFile?.path ?: ""),
+                "language" to (psiFile.language.id.lowercase()),
+                "lineRange" to if (editor.selectionModel.hasSelection())
+                    mapOf("start" to (selectionStart?.line?.plus(1) ?: 0),
+                          "end" to (selectionEnd?.line?.plus(1) ?: 0))
+                else null
+            )
+
+            sendToCore(mapOf(
+                "id" to java.util.UUID.randomUUID().toString(),
+                "type" to "code_action",
+                "payload" to payload
+            ))
+        }
+    }
+
+    companion object {
+        private val ACTION_ID_TO_TYPE = mapOf(
+            "omc.explain" to "explain",
+            "omc.review"  to "review",
+            "omc.impact"  to "impact",
+            "omc.query"   to "query_validation",
+            "omc.improve" to "improve",
+            "omc.test"    to "generate_test",
+        )
     }
 
     private fun handleContextRequest(msg: Map<String, Any?>) {

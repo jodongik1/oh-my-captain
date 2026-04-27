@@ -62,8 +62,14 @@ export async function executeCodeAction(
   const approxPromptTokens = Math.ceil(promptChars / 4)
   log.info({ action: payload.action, filePath: payload.filePath, lineRange: payload.lineRange, promptChars, approxPromptTokens }, '[Action] 스트림 시작')
 
+  // 이미 abort 된 상태로 진입한 경우 stream 자체를 시작하지 않는다.
+  // (race: 사용자가 액션 직후 즉시 중단 누른 경우)
+  if (signal?.aborted) {
+    host.emit('turn_done', {})
+    return
+  }
+
   host.emit('stream_start', { source: 'action' })
-  host.emit('stream_chunk', { token: '' })
 
   let chunkCount = 0
   let responseChars = 0
@@ -92,7 +98,7 @@ export async function executeCodeAction(
     log.info({ action: payload.action, chunkCount, responseChars, approxResponseTokens: Math.ceil(responseChars / 4) }, '[Action] 스트림 완료')
 
     // improve 액션의 경우 응답에서 코드 블록을 추출하여 diff 표시
-    if (payload.action === 'improve' && response.content) {
+    if (!signal?.aborted && payload.action === 'improve' && response.content) {
       const improved = extractCodeFromResponse(response.content)
       if (improved && improved !== payload.code) {
         host.emit('tool_result', {
@@ -107,13 +113,18 @@ export async function executeCodeAction(
       }
     }
   } catch (e: any) {
-    if (signal?.aborted) return
-    const isTimeout = e?.code === 'TIMEOUT'
-    log.error({ action: payload.action, error: e?.message, isTimeout }, '[Action] 스트림 오류')
-    host.emit('stream_chunk', { token: `\n\n---\n⚠️ **${e?.message ?? '알 수 없는 오류가 발생했습니다.'}**` })
+    // abort 로 인한 종료는 사용자에게 에러 메시지를 보여주지 않는다.
+    if (!signal?.aborted) {
+      const isTimeout = e?.code === 'TIMEOUT'
+      log.error({ action: payload.action, error: e?.message, isTimeout }, '[Action] 스트림 오류')
+      host.emit('stream_chunk', { token: `\n\n---\n⚠️ **${e?.message ?? '알 수 없는 오류가 발생했습니다.'}**` })
+    }
+  } finally {
+    // 정상 종료 / 에러 / abort 모두에서 stream_end 와 turn_done 을 보장 emit.
+    // turn_done 이 없으면 webview 의 isBusy 가 영원히 true 로 남아 입력창이 stop 상태로 고정된다.
+    host.emit('stream_end', {})
+    host.emit('turn_done', {})
   }
-
-  host.emit('stream_end', {})
 }
 
 function extractCodeFromResponse(content: string): string {
