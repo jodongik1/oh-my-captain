@@ -1,7 +1,7 @@
 import { request, send } from '../ipc/server.js'
 import { nanoid } from 'nanoid'
 import type { HostAdapter, CoreEventMap } from './interface.js'
-import type { FileContext, ApprovalRequest, Diagnostic } from '../ipc/protocol.js'
+import type { FileContext, ApprovalRequest, Diagnostic, CoreMessage } from '@omc/protocol'
 import { makeLogger } from '../utils/logger.js'
 
 const log = makeLogger('ipc_adapter.ts')
@@ -45,7 +45,8 @@ export class IpcHostAdapter implements HostAdapter {
   // stream_chunk, tool_start, tool_result, stream_end 등 모든 UI 이벤트를
   // ipc/server.ts의 send()를 통해 Node.js stdout → Kotlin → React로 전달
   emit<T extends keyof CoreEventMap>(type: T, payload: CoreEventMap[T]): void {
-    send({ id: nanoid(), type, payload } as any)
+    // Extract 로 좁힌 단언은 discriminated union 의 정확한 한 변형을 가리킨다 (as any 회피).
+    send({ id: nanoid(), type, payload } as Extract<CoreMessage, { type: T }>)
   }
 
   /**

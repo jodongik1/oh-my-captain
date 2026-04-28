@@ -12,6 +12,7 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "@omc/protocol": "workspace:*",
     "@anthropic-ai/sdk": "^0.37.0",
     "@modelcontextprotocol/sdk": "^1.25.1",
     "@streamparser/json": "^0.0.22",

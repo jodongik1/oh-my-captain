@@ -4,7 +4,7 @@ import { mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { nanoid } from 'nanoid'
 import { makeLogger } from '../utils/logger.js'
-import type { SessionSummary, SessionMessage } from '../ipc/protocol.js'
+import type { SessionSummary, SessionMessage } from '@omc/protocol'
 
 const log = makeLogger('session_db.ts')
 

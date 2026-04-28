@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { readdir, stat } from 'fs/promises'
-import { join, isAbsolute, relative } from 'path'
+import { join, relative } from 'path'
 import { registerTool } from './registry.js'
+import { resolvePathOrRoot } from './_base.js'
 import type { HostAdapter } from '../host/interface.js'
 
 const argsSchema = z.object({
@@ -45,9 +46,7 @@ registerTool(
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
-    const absPath = isAbsolute(args.path)
-      ? args.path
-      : join(host.getProjectRoot(), args.path)
+    const absPath = resolvePathOrRoot(args.path, host)
 
     try {
       const entries = await listDirectory(absPath, args.depth, args.showHidden)

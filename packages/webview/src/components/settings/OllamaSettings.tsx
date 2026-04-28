@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { sendToHost, onHostMessage } from '../../bridge/jcef'
+import { useHostBridge } from '../../bridge/HostBridgeContext'
+import { useSettingsActions } from '../../hooks/useSettingsActions'
+import type { LocalSettings } from './SettingsPanel'
 
 interface OllamaSettingsProps {
   baseUrl: string
   apiKey: string
   model: string
   initialModels?: ModelInfo[]
-  onChange: (patch: Record<string, unknown>) => void
+  onChange: (patch: Partial<LocalSettings>) => void
   onConnectionSuccess?: (url: string, apiKey: string, models: ModelInfo[]) => void
 }
 
@@ -19,15 +21,18 @@ interface ModelInfo {
 export default function OllamaSettings({
   baseUrl, apiKey, model, initialModels, onChange, onConnectionSuccess
 }: OllamaSettingsProps) {
+  const bridge = useHostBridge()
+  const settingsActions = useSettingsActions()
   const [connStatus, setConnStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle')
   const [connError, setConnError] = useState('')
   const [models, setModels] = useState<ModelInfo[]>(initialModels ?? [])
   const testingUrl = useRef(baseUrl)
   const testingApiKey = useRef(apiKey)
 
-  // Core에서 connection_test_result 수신
+  // Core 에서 connection_test_result / model_list_result 수신.
+  // bridge.onMessage 의 inbound 타입은 ReceiveType 이며, 본 컴포넌트가 알아야 하는 두 타입만 분기.
   useEffect(() => {
-    return onHostMessage((msg) => {
+    return bridge.onMessage((msg) => {
       if (msg.type === 'connection_test_result') {
         const p = msg.payload as { success: boolean; models?: ModelInfo[]; error?: string }
         if (p.success) {
@@ -46,21 +51,15 @@ export default function OllamaSettings({
         setModels(p.models || [])
       }
     })
-  }, [onConnectionSuccess])
+  }, [bridge, onConnectionSuccess])
 
   const testConnection = useCallback(() => {
     setConnStatus('testing')
     setConnError('')
     testingUrl.current = baseUrl
     testingApiKey.current = apiKey
-    sendToHost({
-      type: 'connection_test',
-      payload: {
-        baseUrl: baseUrl,
-        apiKey: apiKey || undefined
-      }
-    })
-  }, [baseUrl, apiKey])
+    settingsActions.testConnection(baseUrl, apiKey)
+  }, [settingsActions, baseUrl, apiKey])
 
   const handleModelSelect = useCallback((modelId: string) => {
     onChange({ ollamaModel: modelId })

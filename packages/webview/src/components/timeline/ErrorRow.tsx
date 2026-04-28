@@ -9,12 +9,7 @@ export default function ErrorRow({ message, retryable, onRetry }: ErrorRowProps)
     <div className="error-row">
       ⚠ {message}
       {retryable && onRetry && (
-        <button
-          onClick={onRetry}
-          style={{ marginLeft: 8, background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', textDecoration: 'underline', fontSize: 12 }}
-        >
-          재시도
-        </button>
+        <button onClick={onRetry} className="error-row-retry-btn">재시도</button>
       )}
     </div>
   )

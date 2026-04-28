@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, memo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -9,6 +9,11 @@ import MermaidBlock from './MermaidBlock'
 interface StreamRowProps {
   content: string
   syntaxHighlight?: boolean  // true = 코드 액션 응답 (syntax highlighting 활성화)
+  /**
+   * 응답이 아직 스트리밍 중인지 여부.
+   * true 일 때 MermaidBlock 은 미완성 syntax 로 렌더 시도하지 않고 placeholder 만 표시한다 — 깜박임/오류 방지.
+   */
+  isStreaming?: boolean
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -28,7 +33,7 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-export default function StreamRow({ content, syntaxHighlight }: StreamRowProps) {
+function StreamRowImpl({ content, syntaxHighlight, isStreaming }: StreamRowProps) {
   return (
     <div className="stream-row markdown-body">
       <ReactMarkdown
@@ -38,9 +43,9 @@ export default function StreamRow({ content, syntaxHighlight }: StreamRowProps) 
             const match = /language-(\w+)/.exec(className || '')
             const codeString = String(children).replace(/\n$/, '')
 
-            // Mermaid 다이어그램 렌더링
+            // Mermaid 다이어그램 — 스트리밍 중에는 미완성 syntax 로 렌더하지 않고 placeholder
             if (!inline && match && match[1] === 'mermaid') {
-              return <MermaidBlock code={codeString} />
+              return <MermaidBlock code={codeString} isStreaming={isStreaming} />
             }
 
             if (!inline && match) {
@@ -72,3 +77,14 @@ export default function StreamRow({ content, syntaxHighlight }: StreamRowProps) 
     </div>
   )
 }
+
+/**
+ * content / syntaxHighlight / isStreaming 세 prop 만 비교해 memoize.
+ * 부모(Timeline)가 다른 사유(예: 입력창 키 입력으로 인한 store 업데이트)로 re-render 될 때
+ * ReactMarkdown 의 markdown 재파싱 비용을 차단한다 — 특히 Mermaid 가 포함된 행에서 효과가 크다.
+ */
+export default memo(StreamRowImpl, (prev, next) =>
+  prev.content === next.content &&
+  prev.syntaxHighlight === next.syntaxHighlight &&
+  prev.isStreaming === next.isStreaming
+)

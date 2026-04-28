@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { execa } from 'execa'
-import { join, isAbsolute } from 'path'
 import { registerTool } from './registry.js'
+import { resolvePathOrRoot } from './_base.js'
 import type { HostAdapter } from '../host/interface.js'
 
 const argsSchema = z.object({
@@ -45,9 +45,7 @@ ripgrep(rg) 우선 사용, 없으면 grep fallback. 정규식·주변 컨텍스�
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
-    const searchPath = args.path
-      ? (isAbsolute(args.path) ? args.path : join(host.getProjectRoot(), args.path))
-      : host.getProjectRoot()
+    const searchPath = resolvePathOrRoot(args.path, host)
 
     try {
       // ripgrep 우선 시도

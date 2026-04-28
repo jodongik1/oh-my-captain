@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { sendToHost } from '../bridge/jcef'
 import type { SessionSummary } from '../store'
 import HistorySessionItem from './HistorySessionItem'
 
 interface HistoryPopupProps {
   sessions: SessionSummary[]
   currentSessionId: string | null
+  /** 액션 훅(useHistoryActions) 의 selectSession/deleteSession/renameSession 을 그대로 받는다. */
   onSelect: (sessionId: string, title: string) => void
   onDelete: (sessionId: string) => void
   onRename: (sessionId: string, newTitle: string) => void
@@ -53,18 +53,9 @@ export default function HistoryPopup({
               key={session.id}
               session={session}
               isActive={session.id === currentSessionId}
-              onSelect={() => {
-                onSelect(session.id, session.title)
-                sendToHost({ type: 'session_select', payload: { sessionId: session.id } })
-              }}
-              onDelete={() => {
-                onDelete(session.id)
-                sendToHost({ type: 'session_delete', payload: { sessionId: session.id } })
-              }}
-              onRename={(newTitle) => {
-                onRename(session.id, newTitle)
-                sendToHost({ type: 'session_rename', payload: { sessionId: session.id, title: newTitle } })
-              }}
+              onSelect={() => onSelect(session.id, session.title)}
+              onDelete={() => onDelete(session.id)}
+              onRename={(newTitle) => onRename(session.id, newTitle)}
             />
           ))}
         </div>

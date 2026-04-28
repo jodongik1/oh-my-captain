@@ -29,6 +29,14 @@ dependencies {
     // Gson: IntelliJ Platform에 번들되어 있지만 컴파일 시 명시 필요
     implementation("com.google.code.gson:gson:2.11.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.4")
+    // IntelliJ Platform Test Framework 의 SessionListener 가 junit.framework.TestCase 를 요구하므로 호환용.
+    testRuntimeOnly("junit:junit:4.13.2")
+}
+
+// JUnit 5 Platform 사용 — IntelliJ Platform Gradle Plugin 이 만든 test task 에 적용.
+tasks.named<Test>("test") {
+    useJUnitPlatform()
 }
 
 // ── pnpm 경로 탐색 ──────────────────────────────────────────────
@@ -122,6 +130,15 @@ tasks.withType<org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask> {
     // JCEF 로그를 지정된 디렉터리로 라우팅 (IDE 네이티브)
     systemProperty("ide.browser.jcef.log.path", "${logDir.absolutePath}/jcef.log")
     systemProperty("ide.browser.jcef.log.level", jcefLogLevel)
+
+    // OMC 패키지의 DEBUG 로그를 idea.log 로 흘리기 위해 IntelliJ Platform 의 카테고리 활성화 매커니즘 사용.
+    // 디폴트로 DEBUG 가 켜져 있으면 메시지 라우팅·큐잉·실패 분기 등 hot path 추적이 가능해진다.
+    // 노이즈 줄이려면 -PomcDebugLog=false 로 끌 수 있다.
+    val enableOmcDebug = project.findProperty("omcDebugLog")?.toString() != "false"
+    if (enableOmcDebug) {
+        // idea.log.debug.categories: ';' 구분 카테고리 prefix 매칭. 'com.ohmycaptain' 으로 묶은 모든 로거의 DEBUG 활성.
+        systemProperty("idea.log.debug.categories", "com.ohmycaptain")
+    }
 
     // omc.dev 프로퍼티 전달 (개발 모드 식별)
     val omcDev = System.getProperty("omc.dev")

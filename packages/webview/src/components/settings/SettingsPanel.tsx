@@ -1,23 +1,18 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { sendToHost } from '../../bridge/jcef'
 import { toast } from 'sonner'
+import { DEFAULT_SETTINGS, type ApiProvider, type CaptainSettings, type ModelInfo } from '@omc/protocol'
+import { useSettingsActions } from '../../hooks/useSettingsActions'
 import OllamaSettings from './OllamaSettings'
 
-interface ModelInfo {
-  id: string
-  name: string
-  contextWindow?: number
-}
-
 interface SettingsPanelProps {
-  initialSettings: any // CaptainSettings type
+  initialSettings: CaptainSettings
   initialModels?: ModelInfo[]
   onClose: () => void
   onModelsUpdate?: (models: ModelInfo[]) => void
 }
 
 export interface LocalSettings {
-  provider: 'ollama' | 'openai' | 'anthropic'
+  provider: ApiProvider
   ollamaBaseUrl: string
   ollamaApiKey: string
   ollamaModel: string
@@ -30,36 +25,30 @@ export interface LocalSettings {
   requestTimeoutMs: number
 }
 
-function parseCaptainToLocal(s: any): LocalSettings {
-  if (!s) return {
-    provider: 'ollama',
-    ollamaBaseUrl: 'http://localhost:11434',
-    ollamaApiKey: '',
-    ollamaModel: 'qwen3-coder:30b',
-    openAiApiKey: '',
-    openAiModel: 'gpt-4o',
-    openAiBaseUrl: 'https://api.openai.com/v1',
-    anthropicApiKey: '',
-    anthropicModel: 'claude-sonnet-4-20250514',
-    contextWindow: 32768,
-    requestTimeoutMs: 30000,
-  }
+/**
+ * core 가 보낸 nested CaptainSettings 를 UI 가 다루기 쉬운 flat 표현으로 변환.
+ * core 측에서 이미 zod 검증을 통과했으므로 런타임 검증 없이 형식만 펼친다.
+ * 누락 필드는 DEFAULT_SETTINGS 로 폴백.
+ */
+function parseCaptainToLocal(s: CaptainSettings | undefined): LocalSettings {
+  const p = s?.provider ?? DEFAULT_SETTINGS.provider
+  const m = s?.model ?? DEFAULT_SETTINGS.model
   return {
-    provider: s.provider?.provider || 'ollama',
-    ollamaBaseUrl: s.provider?.ollamaBaseUrl || 'http://localhost:11434',
-    ollamaApiKey: s.provider?.ollamaApiKey || '',
-    ollamaModel: s.provider?.ollamaModel || 'qwen3-coder:30b',
-    openAiApiKey: s.provider?.openAiApiKey || '',
-    openAiModel: s.provider?.openAiModel || 'gpt-4o',
-    openAiBaseUrl: s.provider?.openAiBaseUrl || 'https://api.openai.com/v1',
-    anthropicApiKey: s.provider?.anthropicApiKey || '',
-    anthropicModel: s.provider?.anthropicModel || 'claude-sonnet-4-20250514',
-    contextWindow: s.model?.contextWindow || 32768,
-    requestTimeoutMs: s.model?.requestTimeoutMs || 30000,
+    provider: p.provider,
+    ollamaBaseUrl: p.ollamaBaseUrl,
+    ollamaApiKey: p.ollamaApiKey,
+    ollamaModel: p.ollamaModel,
+    openAiApiKey: p.openAiApiKey,
+    openAiModel: p.openAiModel,
+    openAiBaseUrl: p.openAiBaseUrl,
+    anthropicApiKey: p.anthropicApiKey,
+    anthropicModel: p.anthropicModel,
+    contextWindow: m.contextWindow,
+    requestTimeoutMs: m.requestTimeoutMs,
   }
 }
 
-function buildPayload(s: LocalSettings) {
+function buildPayload(s: LocalSettings): CaptainSettings {
   return {
     provider: {
       provider: s.provider,
@@ -80,6 +69,7 @@ function buildPayload(s: LocalSettings) {
 }
 
 export default function SettingsPanel({ initialSettings, initialModels, onClose, onModelsUpdate }: SettingsPanelProps) {
+  const settingsActions = useSettingsActions()
   const [settings, setSettings] = useState<LocalSettings>(() => parseCaptainToLocal(initialSettings))
   const saved = useRef(settings)
   const [dirty, setDirty] = useState(false)
@@ -89,9 +79,7 @@ export default function SettingsPanel({ initialSettings, initialModels, onClose,
   const [verifiedOllamaApiKey, setVerifiedOllamaApiKey] = useState(initLocal.ollamaApiKey)
 
   useEffect(() => {
-    console.error('[REACT SettingsPanel] useEffect triggered with initialSettings:', JSON.stringify(initialSettings))
     const updated = parseCaptainToLocal(initialSettings)
-    console.error('[REACT SettingsPanel] parseCaptainToLocal result:', JSON.stringify(updated))
     setSettings(updated)
     saved.current = updated
     setDirty(false)
@@ -99,8 +87,8 @@ export default function SettingsPanel({ initialSettings, initialModels, onClose,
     setVerifiedOllamaApiKey(updated.ollamaApiKey)
   }, [initialSettings])
 
-  const handleChange = useCallback((patch: Record<string, unknown>) => {
-    setSettings(prev => ({ ...prev, ...patch } as LocalSettings))
+  const handleChange = useCallback((patch: Partial<LocalSettings>) => {
+    setSettings(prev => ({ ...prev, ...patch }))
     setDirty(true)
   }, [])
 
@@ -125,12 +113,12 @@ export default function SettingsPanel({ initialSettings, initialModels, onClose,
       }
     }
     // Core에 전송 (Core가 저장 처리)
-    sendToHost({ type: 'settings_update', payload: buildPayload(settings) })
+    settingsActions.save(buildPayload(settings))
     saved.current = { ...settings }
     setDirty(false)
     toast.success('설정 정보를 저장하였습니다', { duration: 1000 })
     onClose()
-  }, [settings, onClose, verifiedOllamaUrl, verifiedOllamaApiKey])
+  }, [settingsActions, settings, onClose, verifiedOllamaUrl, verifiedOllamaApiKey])
 
 
   // 숫자 값 clamp 유틸
@@ -164,7 +152,7 @@ export default function SettingsPanel({ initialSettings, initialModels, onClose,
           <select
             className="settings-select"
             value={settings.provider}
-            onChange={e => handleChange({ provider: e.target.value })}
+            onChange={e => handleChange({ provider: e.target.value as ApiProvider })}
           >
             <option value="ollama">Ollama</option>
           </select>

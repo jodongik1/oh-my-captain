@@ -10,6 +10,8 @@
  *   - 도구 호출 텍스트는 UI로 보내지 않고 내부 버퍼에 저장
  *   - 일반 텍스트만 반환
  *   - 스트림 종료 후 parsedToolCalls 에서 구조화된 결과를 제공
+ *
+ * 매칭은 정규식 기반이라 `<function = name>`, `< function=name>` 같은 공백 변형도 흡수한다.
  */
 
 import type { ToolCall } from './types.js'
@@ -17,11 +19,34 @@ import { makeLogger } from '../utils/logger.js'
 
 const log = makeLogger('text_tool_call_filter.ts')
 
-// 도구 호출이 시작될 수 있는 마커 (공백 포함 변형도 지원)
-const OPEN_MARKERS = ['<tool_call>', '<function=', '< function=', '<function =']
+// 완전 매칭(open) — 두 패턴 중 가장 일찍 등장하는 위치를 마커 시작점으로 채택.
+// OPEN_FUNCTION_RE 가 마지막에 \w 를 요구하는 이유: '<function=' 만 들어온 시점에는
+// 다음 토큰에 함수명이 더 올 수 있으므로 confirm 하지 않고 partial 로 처리한다.
+const OPEN_TOOL_CALL_RE = /<tool_call>/
+const OPEN_FUNCTION_RE = /<\s*function\s*=\s*\w/
 
-// 도구 호출 잔여 닫힘 태그 (마커 없이 단독으로 나타나는 경우 필터링)
-const CLOSE_ONLY_TAGS = ['</tool_call>', '</function>']
+// 닫힘 태그(둘 중 어떤 포맷인지에 따라 분기). 공백 변형 허용.
+const CLOSE_TOOL_CALL_RE = /<\s*\/\s*tool_call\s*>/
+const CLOSE_FUNCTION_RE = /<\s*\/\s*function\s*>/
+
+// 고아 닫힘 태그(시작 마커 없이 단독으로 등장하는 경우 그냥 제거)
+const ORPHAN_CLOSE_RE = /<\s*\/\s*(?:tool_call|function)\s*>/g
+
+// 부분 매칭 후보. 토큰 경계에서 마커가 잘릴 수 있으므로 prefix 집합으로 확인.
+// 마커가 길어질 수 있는 모든 변형을 포함해야 한다.
+const FULL_OPEN_MARKERS_FOR_PARTIAL = [
+  '<tool_call>',
+  '<function=', '<function =', '<function = ',
+  '< function=', '< function =', '< function = ',
+]
+const OPEN_PARTIAL_PREFIXES: string[] = (() => {
+  const set = new Set<string>()
+  for (const m of FULL_OPEN_MARKERS_FOR_PARTIAL) {
+    for (let i = 1; i < m.length; i++) set.add(m.slice(0, i))
+  }
+  // 긴 prefix 부터 검사해야 더 정확한 보류 길이를 얻을 수 있다.
+  return Array.from(set).sort((a, b) => b.length - a.length)
+})()
 
 export class TextToolCallFilter {
   private pending = ''      // 도구 호출 시작일 수 있어서 보류 중인 텍스트
@@ -36,18 +61,7 @@ export class TextToolCallFilter {
   feed(token: string): string {
     if (this.inTool) {
       this.toolBuf += token
-      const closeIdx = this.findClose()
-      if (closeIdx !== -1) {
-        const toolText = this.toolBuf.slice(0, closeIdx)
-        const after = this.toolBuf.slice(closeIdx)
-        this.toolBuf = ''
-        this.inTool = false
-        const parsed = parseOneToolCall(toolText)
-        if (parsed) this.parsedToolCalls.push(parsed)
-        // 닫힘 태그 이후 내용은 다시 일반 처리
-        return this.feed(after)
-      }
-      return ''
+      return this.tryCloseAndContinue('')
     }
 
     this.pending += token
@@ -60,28 +74,44 @@ export class TextToolCallFilter {
       this.pending = ''
       this.inTool = true
       log.warn(`도구 호출 마커 감지: ${this.toolBuf.slice(0, 40)}`)
-      return safe
+      // open + close 가 같은 토큰에 들어온 경우 즉시 닫고, 잔여 텍스트도 이어서 처리.
+      return this.tryCloseAndContinue(safe)
     }
 
-    // pending 끝부분이 마커의 부분 일치일 수 있으므로 보류
+    // pending 끝부분이 마커의 부분 일치일 수 있으므로 보류 (전체가 prefix 인 경우 partialIdx=0 도 포함)
     const partialIdx = findPartialOpenEnd(this.pending)
-    if (partialIdx > 0) {
+    if (partialIdx >= 0) {
       const safe = this.pending.slice(0, partialIdx)
       this.pending = this.pending.slice(partialIdx)
       return safe
     }
 
-    // 고아 닫힘 태그(</tool_call>, </function>) 제거
-    for (const tag of CLOSE_ONLY_TAGS) {
-      if (this.pending.includes(tag)) {
-        log.warn(`고아 닫힘 태그 제거: ${tag}`)
-        this.pending = this.pending.split(tag).join('')
-      }
+    // 고아 닫힘 태그 제거
+    if (ORPHAN_CLOSE_RE.test(this.pending)) {
+      log.warn('고아 닫힘 태그 제거')
+      this.pending = this.pending.replace(ORPHAN_CLOSE_RE, '')
     }
 
     const safe = this.pending
     this.pending = ''
     return safe
+  }
+
+  /**
+   * inTool 상태에서 close 태그 검사 후 닫혔으면 잔여 텍스트를 일반 경로로 재귀 처리.
+   * 닫히지 않았다면 prefix 만 반환하고 buffer 유지.
+   */
+  private tryCloseAndContinue(prefix: string): string {
+    const closeIdx = this.findClose()
+    if (closeIdx === -1) return prefix
+    const toolText = this.toolBuf.slice(0, closeIdx)
+    const after = this.toolBuf.slice(closeIdx)
+    this.toolBuf = ''
+    this.inTool = false
+    const parsed = parseOneToolCall(toolText)
+    if (parsed) this.parsedToolCalls.push(parsed)
+    // 닫힘 태그 이후 내용은 다시 일반 처리
+    return prefix + (after ? this.feed(after) : '')
   }
 
   /**
@@ -100,22 +130,23 @@ export class TextToolCallFilter {
   }
 
   private findOpen(text: string): number {
-    let earliest = -1
-    for (const marker of OPEN_MARKERS) {
-      const idx = text.indexOf(marker)
-      if (idx !== -1 && (earliest === -1 || idx < earliest)) earliest = idx
-    }
-    return earliest
+    const m1 = OPEN_TOOL_CALL_RE.exec(text)
+    const m2 = OPEN_FUNCTION_RE.exec(text)
+    const i1 = m1 ? m1.index : -1
+    const i2 = m2 ? m2.index : -1
+    if (i1 === -1) return i2
+    if (i2 === -1) return i1
+    return Math.min(i1, i2)
   }
 
   private findClose(): number {
     if (this.toolBuf.startsWith('<tool_call>')) {
-      const idx = this.toolBuf.indexOf('</tool_call>')
-      return idx === -1 ? -1 : idx + '</tool_call>'.length
+      const m = CLOSE_TOOL_CALL_RE.exec(this.toolBuf)
+      return m ? m.index + m[0].length : -1
     }
-    if (/^<function=/.test(this.toolBuf)) {
-      const idx = this.toolBuf.indexOf('</function>')
-      return idx === -1 ? -1 : idx + '</function>'.length
+    if (/^<\s*function\s*=/.test(this.toolBuf)) {
+      const m = CLOSE_FUNCTION_RE.exec(this.toolBuf)
+      return m ? m.index + m[0].length : -1
     }
     return -1
   }
@@ -123,12 +154,8 @@ export class TextToolCallFilter {
 
 /** pending 끝부분이 마커의 접두사와 일치하는 위치를 반환 */
 function findPartialOpenEnd(text: string): number {
-  for (const marker of OPEN_MARKERS) {
-    for (let len = Math.min(marker.length - 1, text.length); len > 0; len--) {
-      if (text.endsWith(marker.slice(0, len))) {
-        return text.length - len
-      }
-    }
+  for (const p of OPEN_PARTIAL_PREFIXES) {
+    if (text.endsWith(p)) return text.length - p.length
   }
   return -1
 }
@@ -148,13 +175,13 @@ function parseOneToolCall(text: string): ToolCall | null {
       }
     }
 
-    // 포맷 2: <function=name><parameter=p>v</parameter>...</function>
-    const funcMatch = text.match(/<function=(\w+)>([\s\S]*?)(?:<\/function>|$)/)
+    // 포맷 2: <function=name><parameter=p>v</parameter>...</function> (공백 허용)
+    const funcMatch = text.match(/<\s*function\s*=\s*(\w+)\s*>([\s\S]*?)(?:<\s*\/\s*function\s*>|$)/)
     if (funcMatch) {
       const name = funcMatch[1]
       const body = funcMatch[2]
       const args: Record<string, unknown> = {}
-      const paramRe = /<parameter=(\w+)>([\s\S]*?)<\/parameter>/g
+      const paramRe = /<\s*parameter\s*=\s*(\w+)\s*>([\s\S]*?)<\s*\/\s*parameter\s*>/g
       let m: RegExpExecArray | null
       while ((m = paramRe.exec(body)) !== null) {
         const val = m[2].trim()

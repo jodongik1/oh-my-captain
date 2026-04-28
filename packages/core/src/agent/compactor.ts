@@ -1,163 +1,321 @@
 /**
- * 3-Tier Context Compaction Strategy.
+ * 5-Stage Context Compaction Pipeline.
  *
- * Tier 1 — Tool Output Trimming (75% 초과)
- *   오래된 tool result 메시지의 content를 요약/축소.
- *   대화 흐름(user/assistant)은 보존.
+ * LLM 의 주의력을 보호하기 위해 매 모델 호출 직전에 적용되는 단계적 압축 전략.
+ * 단계별로 점차 강하게 잘라내며, 이전 단계로 충분하면 다음 단계는 진입하지 않는다.
  *
- * Tier 2 — LLM Summarization (85% 초과)
- *   오래된 대화 턴을 LLM으로 요약, 단일 system 메시지로 교체.
- *   System(0번) + 요약 + 최근 N개 메시지 보존.
+ *   1. Budget reduction  — 정적 시스템 영역(rules/memory/open files)을 슬림화
+ *   2. Snip              — 가장 오래된 대용량 tool_result 본문 삭제 (메타만 유지)
+ *   3. Microcompact      — 남은 대용량 tool_result 본문을 head/tail 만 보존
+ *   4. Context collapse  — 오래된 user/assistant 턴을 구조화 요약으로 대체 (룰 기반)
+ *   5. Auto-compact      — 전체 히스토리를 LLM 요약으로 교체 (마지막 수단)
  *
- * Tier 3 — Hard Reset (95% 초과)
- *   LLM 요약 실패 시 또는 극한 상황.
- *   System + 마지막 3개 메시지만 유지.
+ * 모든 단계는 system 메시지(0번)와 최근 PRESERVE_RECENT 개의 메시지를 절대 건드리지 않는다.
  */
 
 import type { LLMProvider, Message } from '../providers/types.js'
-import { totalTokens } from '../utils/tokens.js'
+import { totalTokens, estimateTokens } from '../utils/tokens.js'
 import { makeLogger } from '../utils/logger.js'
+import { COMPACTOR_TUNING, TOOL_RESULT_LIMITS } from './tuning.js'
 
 const log = makeLogger('compactor.ts')
 
-// ── 임계값 (contextWindow 대비 비율) ──
-const TIER1_THRESHOLD = 0.75
-const TIER2_THRESHOLD = 0.85
-const TIER3_THRESHOLD = 0.95
+/** 모든 단계가 보존하는 최근 메시지 수 (현재 ReAct 흐름을 깨지 않기 위함) */
+const PRESERVE_RECENT = 6
 
-// 도구 결과 축소 시 최대 길이
-const TOOL_RESULT_MAX_CHARS = 2000
-// Tier 2 요약 시 보존할 최근 메시지 수
-const PRESERVE_RECENT = 5
+/** Snip / Microcompact 진입 시 이 값보다 큰 tool_result 만 대상이 된다. */
+const TOOL_RESULT_LARGE_THRESHOLD_CHARS = 1500
 
+export type CompactionStage =
+  | 'none'
+  | 'budget'
+  | 'snip'
+  | 'microcompact'
+  | 'collapse'
+  | 'auto'
 
-
-/**
- * Tier 1: 오래된 tool result 메시지의 대용량 출력을 축소합니다.
- * - 최근 PRESERVE_RECENT개를 제외한 tool 메시지 대상
- * - 긴 content를 앞/뒤만 보존하고 중간 생략
- */
-function tier1TrimToolOutputs(messages: Message[]): Message[] {
-  const cutoff = Math.max(1, messages.length - PRESERVE_RECENT)
-
-  return messages.map((msg, i) => {
-    // 최근 메시지 또는 system은 건드리지 않음
-    if (i === 0 || i >= cutoff) return msg
-    if (msg.role !== 'tool') return msg
-
-    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
-    if (content.length <= TOOL_RESULT_MAX_CHARS) return msg
-
-    // 앞 800자 + ... + 뒤 800자
-    const head = content.slice(0, 800)
-    const tail = content.slice(-800)
-    return {
-      ...msg,
-      content: `${head}\n\n...(${content.length - 1600}자 생략)...\n\n${tail}`,
-    }
-  })
+export interface CompactionResult {
+  messages: Message[]
+  stage: CompactionStage
+  beforeTokens: number
+  afterTokens: number
 }
 
 /**
- * Tier 2: 오래된 대화를 LLM으로 요약하여 압축합니다.
- * System(0번) + 요약 + 최근 PRESERVE_RECENT개 보존.
- */
-async function tier2Summarize(messages: Message[], provider: LLMProvider): Promise<Message[]> {
-  const systemMessage = messages[0]
-  const preserved = messages.slice(-PRESERVE_RECENT)
-  const toSummarize = messages.slice(1, -PRESERVE_RECENT)
-
-  if (toSummarize.length === 0) return messages
-
-  const summaryInput = toSummarize.map(m => {
-    const role = m.role.toUpperCase()
-    const content = typeof m.content === 'string'
-      ? m.content.slice(0, 500)  // 각 메시지 최대 500자만
-      : JSON.stringify(m).slice(0, 500)
-    return `[${role}] ${content}`
-  }).join('\n---\n')
-
-  const summary = await provider.complete(
-    `You are summarizing a prior conversation between an AI coding agent and a user.
-Preserve:
-- Key decisions made
-- Files modified and why
-- Unresolved issues or pending tasks
-- Important code patterns discovered
-
-Be concise but comprehensive. Output in the same language as the conversation.
-
-Conversation:
-${summaryInput}
-
-Summary:`
-  )
-
-  return [
-    systemMessage,
-    {
-      role: 'system' as const,
-      content: `[이전 대화 요약 — ${toSummarize.length}개 메시지 압축]\n\n${summary}`,
-    },
-    ...preserved,
-  ]
-}
-
-/**
- * Tier 3: 비상 잘라내기. System + 마지막 3개 메시지만 보존.
- */
-function tier3HardReset(messages: Message[]): Message[] {
-  const systemMessage = messages[0]
-  const lastMessages = messages.slice(-3)
-  return [
-    systemMessage,
-    {
-      role: 'system' as const,
-      content: '[⚠️ 컨텍스트 한계 도달 — 이전 대화가 제거되었습니다. 필요한 정보는 다시 요청하세요.]',
-    },
-    ...lastMessages,
-  ]
-}
-
-/**
- * 메인 압축 함수 — 3-Tier 전략 적용.
- *
- * @param messages   현재 대화 메시지 배열
- * @param contextWindow  모델의 컨텍스트 윈도우 크기
- * @param provider   LLM 프로바이더 (Tier 2 요약용)
- * @returns 압축된 메시지 배열 + 적용된 Tier 정보
+ * 메인 진입점. 현재 사용 비율을 보고 필요한 단계까지 적용한다.
+ * 한 번의 호출에서 여러 단계를 누적 적용할 수 있다(누적 효과로 임계 이하로 떨어지면 거기서 종료).
  */
 export async function compactMessages(
   messages: Message[],
   contextWindow: number,
   provider: LLMProvider
-): Promise<{ messages: Message[]; tier: 0 | 1 | 2 | 3 }> {
-  const tokens = totalTokens(messages)
-  const ratio = tokens / contextWindow
+): Promise<CompactionResult> {
+  const beforeTokens = totalTokens(messages)
+  const ratio = beforeTokens / contextWindow
 
-  // 임계값 미달 — 압축 불필요
-  if (ratio < TIER1_THRESHOLD) {
-    return { messages, tier: 0 }
+  if (ratio < COMPACTOR_TUNING.checkRatio) {
+    return { messages, stage: 'none', beforeTokens, afterTokens: beforeTokens }
   }
 
-  // ── Tier 1 ──
-  let compacted = tier1TrimToolOutputs(messages)
-  if (totalTokens(compacted) / contextWindow < TIER2_THRESHOLD) {
-    log.info(`Tier 1 적용: ${tokens} → ${totalTokens(compacted)} tokens`)
-    return { messages: compacted, tier: 1 }
+  let current = messages
+  let appliedStage: CompactionStage = 'none'
+
+  // ── Stage 1: Budget reduction ─────────────────────────────────
+  if (currentRatio(current, contextWindow) >= COMPACTOR_TUNING.budgetReduction) {
+    current = stage1BudgetReduction(current)
+    appliedStage = 'budget'
+    if (currentRatio(current, contextWindow) < COMPACTOR_TUNING.snip) {
+      return finalize('budget', messages, current, beforeTokens)
+    }
   }
 
-  // ── Tier 2 ──
+  // ── Stage 2: Snip ─────────────────────────────────────────────
+  if (currentRatio(current, contextWindow) >= COMPACTOR_TUNING.snip) {
+    current = stage2Snip(current)
+    appliedStage = 'snip'
+    if (currentRatio(current, contextWindow) < COMPACTOR_TUNING.microcompact) {
+      return finalize('snip', messages, current, beforeTokens)
+    }
+  }
+
+  // ── Stage 3: Microcompact ─────────────────────────────────────
+  if (currentRatio(current, contextWindow) >= COMPACTOR_TUNING.microcompact) {
+    current = stage3Microcompact(current)
+    appliedStage = 'microcompact'
+    if (currentRatio(current, contextWindow) < COMPACTOR_TUNING.contextCollapse) {
+      return finalize('microcompact', messages, current, beforeTokens)
+    }
+  }
+
+  // ── Stage 4: Context collapse (rule-based, no LLM) ───────────
+  if (currentRatio(current, contextWindow) >= COMPACTOR_TUNING.contextCollapse) {
+    current = stage4ContextCollapse(current)
+    appliedStage = 'collapse'
+    if (currentRatio(current, contextWindow) < COMPACTOR_TUNING.autoCompact) {
+      return finalize('collapse', messages, current, beforeTokens)
+    }
+  }
+
+  // ── Stage 5: Auto-compact (LLM summarization, last resort) ───
   try {
-    compacted = await tier2Summarize(compacted, provider)
-    log.info(`Tier 2 적용: ${tokens} → ${totalTokens(compacted)} tokens`)
-    return { messages: compacted, tier: 2 }
+    current = await stage5AutoCompact(current, provider)
+    appliedStage = 'auto'
   } catch (e) {
-    log.warn('Tier 2 실패, Tier 3로 fallback:', e)
+    log.warn(`Auto-compact 실패 — collapse 결과 유지: ${(e as Error).message}`)
+    // collapse 결과로 진행
   }
 
-  // ── Tier 3 ──
-  compacted = tier3HardReset(messages)
-  log.warn(`Tier 3 적용 (비상 잘라내기): ${tokens} → ${totalTokens(compacted)} tokens`)
-  return { messages: compacted, tier: 3 }
+  return finalize(appliedStage, messages, current, beforeTokens)
 }
+
+function finalize(
+  stage: CompactionStage,
+  before: Message[],
+  after: Message[],
+  beforeTokens: number
+): CompactionResult {
+  const afterTokens = totalTokens(after)
+  log.info(`Compaction[${stage}]: ${beforeTokens} → ${afterTokens} tokens (${before.length} → ${after.length} msgs)`)
+  return { messages: after, stage, beforeTokens, afterTokens }
+}
+
+function currentRatio(messages: Message[], ctxWindow: number): number {
+  return totalTokens(messages) / ctxWindow
+}
+
+// ── Stage 1: Budget reduction ─────────────────────────────────
+/**
+ * 시스템 프롬프트 안의 정적 섹션 (Project Rules, Memory, Open Files) 을 슬림화한다.
+ * 이 섹션들은 매 turn 동일하게 반복되어 컨텍스트 비효율의 큰 원인이다.
+ */
+function stage1BudgetReduction(messages: Message[]): Message[] {
+  if (messages.length === 0 || messages[0].role !== 'system') return messages
+
+  const sys = messages[0].content
+  let trimmed = sys
+
+  // Open Files 섹션의 심볼 리스트만 축소 (파일 경로는 보존)
+  trimmed = trimmed.replace(
+    /(## 현재 열려 있는 파일\n\n)([\s\S]*?)(?=\n## |\n\n\{|$)/,
+    (_, header, body) => {
+      const slim = body
+        .split('\n')
+        .filter((line: string) => !line.startsWith('  - ')) // 심볼 디테일 제거
+        .join('\n')
+      return `${header}${slim}`
+    }
+  )
+
+  // Project Memory 섹션이 8000자를 넘으면 앞 4000자만 유지
+  trimmed = trimmed.replace(
+    /(## Project Memory\n\n[\s\S]*?\n\n)([\s\S]+?)(?=\n## |$)/,
+    (_, header, body) => {
+      if (body.length <= 4000) return `${header}${body}`
+      return `${header}${body.slice(0, 4000)}\n\n...(이전 메모리 일부 생략 — 컨텍스트 절약)...`
+    }
+  )
+
+  if (trimmed === sys) return messages
+  return [{ ...messages[0], content: trimmed } as Message, ...messages.slice(1)]
+}
+
+// ── Stage 2: Snip ─────────────────────────────────────────────
+/**
+ * 오래된 대용량 tool_result 의 본문을 메타데이터(도구 이름·길이)만 남기고 제거한다.
+ * 같은 정보를 LLM 이 또 보고 있을 가능성이 높고, 버려도 흐름이 깨지지 않는 부분.
+ */
+function stage2Snip(messages: Message[]): Message[] {
+  const cutoff = Math.max(1, messages.length - PRESERVE_RECENT)
+  return messages.map((msg, i) => {
+    if (i === 0 || i >= cutoff) return msg
+    if (msg.role !== 'tool') return msg
+    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+    if (content.length <= TOOL_RESULT_LARGE_THRESHOLD_CHARS) return msg
+    const toolHint = extractToolName(content)
+    return {
+      ...msg,
+      content: JSON.stringify({
+        __snipped: true,
+        tool: toolHint,
+        originalChars: content.length,
+        note: 'Older tool result was truncated to save context. Re-run the tool if you need this data again.',
+      }),
+    }
+  })
+}
+
+// ── Stage 3: Microcompact ─────────────────────────────────────
+/**
+ * 남아 있는 모든 대용량 tool_result 를 head/tail 만 보존하는 형태로 압축한다.
+ */
+function stage3Microcompact(messages: Message[]): Message[] {
+  const cutoff = Math.max(1, messages.length - PRESERVE_RECENT)
+  const HEAD = TOOL_RESULT_LIMITS.microcompactHead
+  const TAIL = TOOL_RESULT_LIMITS.microcompactTail
+  return messages.map((msg, i) => {
+    if (i === 0 || i >= cutoff) return msg
+    if (msg.role !== 'tool') return msg
+    const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)
+    if (content.length <= HEAD + TAIL + 200) return msg
+    const head = content.slice(0, HEAD)
+    const tail = content.slice(-TAIL)
+    return {
+      ...msg,
+      content: `${head}\n\n...(${content.length - HEAD - TAIL}자 생략)...\n\n${tail}`,
+    }
+  })
+}
+
+// ── Stage 4: Context collapse ─────────────────────────────────
+/**
+ * 시스템 프롬프트와 최근 N개를 제외한 모든 user/assistant 턴을 룰 기반 요약으로 대체한다.
+ * LLM 호출 없이 즉시 수행 가능 (assistant 의 tool_calls 시그니처를 추출).
+ */
+function stage4ContextCollapse(messages: Message[]): Message[] {
+  if (messages.length <= PRESERVE_RECENT + 2) return messages
+  const system = messages[0]
+  const preserved = messages.slice(-PRESERVE_RECENT)
+  const middle = messages.slice(1, -PRESERVE_RECENT)
+
+  const userTurns: string[] = []
+  const toolUseSummary = new Map<string, number>()
+  let assistantTextSamples = 0
+  for (const m of middle) {
+    if (m.role === 'user') {
+      const txt = typeof m.content === 'string' ? m.content : ''
+      if (txt) userTurns.push(txt.slice(0, 200))
+    } else if (m.role === 'assistant') {
+      if (m.tool_calls) {
+        for (const tc of m.tool_calls) {
+          toolUseSummary.set(tc.function.name, (toolUseSummary.get(tc.function.name) ?? 0) + 1)
+        }
+      }
+      if (assistantTextSamples < 2 && typeof m.content === 'string' && m.content.length > 50) {
+        assistantTextSamples++
+      }
+    }
+  }
+
+  const toolLine = Array.from(toolUseSummary.entries())
+    .map(([name, count]) => `${name}×${count}`)
+    .join(', ')
+
+  const summaryBody = [
+    `[Context Collapse — ${middle.length}개 메시지 압축]`,
+    userTurns.length > 0
+      ? `이전 사용자 발화: ${userTurns.map(s => `"${s.replace(/\s+/g, ' ')}"`).join(' / ')}`
+      : null,
+    toolLine ? `이전 도구 사용 카운트: ${toolLine}` : null,
+    `참고: 자세한 도구 결과는 제거되었습니다. 필요하면 도구를 재실행하세요.`,
+  ].filter(Boolean).join('\n')
+
+  return [system, { role: 'system' as const, content: summaryBody }, ...preserved]
+}
+
+// ── Stage 5: Auto-compact (LLM summarization) ─────────────────
+async function stage5AutoCompact(messages: Message[], provider: LLMProvider): Promise<Message[]> {
+  if (messages.length <= PRESERVE_RECENT + 2) return messages
+  const system = messages[0]
+  const preserved = messages.slice(-PRESERVE_RECENT)
+  const middle = messages.slice(1, -PRESERVE_RECENT)
+
+  const transcript = middle.map(m => {
+    const role = m.role.toUpperCase()
+    if (m.role === 'assistant' && m.tool_calls?.length) {
+      const calls = m.tool_calls.map(tc => `${tc.function.name}(${truncateArgs(tc.function.arguments)})`).join(', ')
+      const text = m.content ? ` text="${m.content.slice(0, 200)}"` : ''
+      return `[${role}] tool_calls=${calls}${text}`
+    }
+    const c = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+    return `[${role}] ${c.slice(0, 400)}`
+  }).join('\n---\n')
+
+  const prompt = `You are compressing prior turns of an AI coding agent so that the agent can keep working without losing essential progress.
+
+Output a compact summary in the same language as the conversation. Preserve:
+- The user's overall goal and any constraints they stated
+- Files/functions modified so far and the rationale
+- Outstanding TODOs / unresolved errors / blockers
+- Important findings from tool results (concrete file paths, key code patterns)
+
+Drop:
+- Verbose tool output bodies (only mention what was learned)
+- Polite filler, restated questions, redundant analysis
+
+Be terse but lossless on facts. ~300-500 words max.
+
+Conversation:
+${transcript}
+
+Compressed summary:`
+
+  const summary = await provider.complete(prompt)
+
+  return [
+    system,
+    {
+      role: 'system' as const,
+      content: `[이전 대화 요약 — auto-compact, ${middle.length}개 메시지]\n\n${summary.trim()}`,
+    },
+    ...preserved,
+  ]
+}
+
+// ── 헬퍼 ──────────────────────────────────────────────────────
+function extractToolName(content: string): string {
+  // tool_result 의 content 가 JSON 이면 'tool' 키, 아니면 첫 줄에서 추측
+  try {
+    const parsed = JSON.parse(content) as { tool?: string }
+    if (parsed?.tool) return parsed.tool
+  } catch { /* not json */ }
+  const firstLine = content.split('\n', 1)[0]
+  return firstLine.length > 40 ? 'unknown' : firstLine
+}
+
+function truncateArgs(args: Record<string, unknown>): string {
+  const s = JSON.stringify(args)
+  return s.length > 120 ? s.slice(0, 117) + '...' : s
+}
+
+// 외부에서 토큰 추정 헬퍼를 가져갈 수 있도록 재노출
+export { estimateTokens }

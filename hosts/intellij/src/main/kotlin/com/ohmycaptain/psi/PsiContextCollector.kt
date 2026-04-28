@@ -3,9 +3,19 @@ package com.ohmycaptain.psi
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.*
+import com.intellij.psi.PsiDocumentManager
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
+import com.intellij.psi.PsiRecursiveElementVisitor
 import com.intellij.psi.util.PsiTreeUtil
 
+/**
+ * Core 로 전송되는 파일 컨텍스트 DTO 들.
+ *
+ * 모든 line 값은 1-base. JSON 직렬화는 Gson 의 데이터클래스 직렬화에 위임한다.
+ * 필드명을 바꾸면 Core 측 스키마([context_response] 페이로드)와 어긋나므로 양쪽을 함께 갱신해야 한다.
+ */
 data class SymbolDto(val kind: String, val name: String, val line: Int)
 data class DiagnosticDto(val severity: String, val message: String, val line: Int)
 data class FileContextDto(
@@ -17,28 +27,33 @@ data class FileContextDto(
     val diagnostics: List<DiagnosticDto> = emptyList()
 )
 
-class PsiContextCollector {
+/**
+ * VirtualFile → [FileContextDto] 변환기.
+ *
+ * 언어별 PSI 분석은 [LanguageSupport] 전략 리스트로 위임 — 새 언어를 추가하려면
+ * `LanguageSupport` 구현체 하나만 만들고 [defaultLanguageSupports] 에 등록한다.
+ *
+ * 의존성 주입: 생성자에서 전략 리스트를 받으므로 단위 테스트에서 가짜 전략을 주입할 수 있다.
+ * 운영 코드는 인자 없이 생성하면 [defaultLanguageSupports] 가 사용된다.
+ *
+ * 동시성: [collect] 는 [ReadAction] 컨텍스트에서 PSI 트리에 접근하여 안전성을 보장한다.
+ */
+class PsiContextCollector internal constructor(
+    private val languageSupports: List<LanguageSupport>,
+) {
+    constructor() : this(defaultLanguageSupports())
 
-    // Java PSI 클래스가 런타임에 존재하는지 확인 (com.intellij.java 번들 플러그인 유무)
-    private val javaPsiAvailable: Boolean by lazy {
-        try {
-            Class.forName("com.intellij.psi.PsiClass")
-            true
-        } catch (_: ClassNotFoundException) {
-            false
-        }
+    /** 가용한 전략만 미리 거른 캐시 — 매 파일마다 isAvailable 호출 비용을 피한다. */
+    private val activeSupports: List<LanguageSupport> by lazy {
+        languageSupports.filter { it.isAvailable() }
     }
 
-    // Kotlin PSI 가 존재하는지 확인 (org.jetbrains.kotlin 번들 플러그인 유무)
-    private val kotlinPsiAvailable: Boolean by lazy {
-        try {
-            Class.forName("org.jetbrains.kotlin.psi.KtClassOrObject")
-            true
-        } catch (_: ClassNotFoundException) {
-            false
-        }
-    }
-
+    /**
+     * 파일 하나를 읽어 컨텍스트 DTO 로 변환.
+     *
+     * PsiManager 가 PSI 를 만들지 못하는 경우(바이너리·미지원 언어 등) 도 path/content 만 채운
+     * 부분 응답을 돌려준다 — Core 가 텍스트 기반으로라도 다룰 수 있게.
+     */
     fun collect(project: Project, file: VirtualFile): FileContextDto {
         return ReadAction.compute<FileContextDto, Exception> {
             val psiFile = PsiManager.getInstance(project).findFile(file)
@@ -53,27 +68,27 @@ class PsiContextCollector {
                 content = psiFile.text,
                 symbols = collectSymbols(psiFile),
                 imports = collectImports(psiFile),
-                diagnostics = collectDiagnostics(project, file)
+                diagnostics = emptyList(),  // Phase 2 에서 InspectionManager 기반으로 구체화 예정
             )
         }
     }
 
+    /**
+     * PSI 트리를 재귀 방문하며 모든 활성 전략을 시도해 심볼을 수집.
+     *
+     * 한 element 에 대해 여러 전략이 시도되지만 보통 하나만 매치된다(언어별로 element 타입이 다르므로).
+     * 분기 비용이 미미해 모든 전략을 항상 시도한다.
+     */
     private fun collectSymbols(psiFile: PsiFile): List<SymbolDto> {
         val result = mutableListOf<SymbolDto>()
         psiFile.accept(object : PsiRecursiveElementVisitor() {
             override fun visitElement(element: PsiElement) {
-                val doc = PsiDocumentManager.getInstance(psiFile.project)
-                    .getDocument(psiFile)
+                // textOffset 은 0-base char offset → line 으로 변환하면서 1-base 로 +1.
+                val doc = PsiDocumentManager.getInstance(psiFile.project).getDocument(psiFile)
                 val line = doc?.getLineNumber(element.textOffset)?.plus(1) ?: 0
 
-                // Java PSI (com.intellij.java 가 있을 때만)
-                if (javaPsiAvailable) {
-                    collectJavaSymbol(element, line, result)
-                }
-
-                // Kotlin PSI (org.jetbrains.kotlin 이 있을 때만)
-                if (kotlinPsiAvailable) {
-                    collectKotlinSymbol(element, line, result)
+                for (support in activeSupports) {
+                    support.extractSymbol(element, line)?.let { result.add(it) }
                 }
 
                 super.visitElement(element)
@@ -82,54 +97,28 @@ class PsiContextCollector {
         return result
     }
 
-    /** Java PSI 심볼 수집 — 별도 메서드로 분리하여 ClassNotFoundException 격리 */
-    private fun collectJavaSymbol(element: PsiElement, line: Int, result: MutableList<SymbolDto>) {
-        try {
-            when (element) {
-                is com.intellij.psi.PsiClass  -> result.add(SymbolDto("class", element.name ?: "", line))
-                is com.intellij.psi.PsiMethod -> result.add(SymbolDto("function", element.name, line))
-                is com.intellij.psi.PsiField  -> result.add(SymbolDto("variable", element.name, line))
-            }
-        } catch (_: NoClassDefFoundError) {
-            // Java PSI 클래스를 로드할 수 없음 — 무시
-        }
-    }
-
-    /** Kotlin PSI 심볼 수집 — 별도 메서드로 분리하여 ClassNotFoundException 격리 */
-    private fun collectKotlinSymbol(element: PsiElement, line: Int, result: MutableList<SymbolDto>) {
-        try {
-            when (element) {
-                is org.jetbrains.kotlin.psi.KtClassOrObject -> result.add(SymbolDto("class", element.name ?: "", line))
-                is org.jetbrains.kotlin.psi.KtNamedFunction -> result.add(SymbolDto("function", element.name ?: "", line))
-                is org.jetbrains.kotlin.psi.KtProperty       -> result.add(SymbolDto("variable", element.name ?: "", line))
-            }
-        } catch (_: NoClassDefFoundError) {
-            // Kotlin PSI 클래스를 로드할 수 없음 — 무시
-        }
-    }
-
+    /**
+     * import 목록 추출.
+     *
+     * 가용 전략들에 차례로 위임 — 첫 번째로 non-null 을 돌려주는 전략의 결과를 사용.
+     * 어느 전략도 처리하지 못하면 텍스트 기반 fallback (모든 언어에 대한 최후 수단).
+     */
     private fun collectImports(psiFile: PsiFile): List<String> {
-        // PsiJavaFile 도 Java PSI 에 속하므로 안전하게 처리
-        if (javaPsiAvailable) {
-            try {
-                if (psiFile is com.intellij.psi.PsiJavaFile) {
-                    return psiFile.importList?.importStatements
-                        ?.map { it.qualifiedName ?: "" }?.filter { it.isNotEmpty() } ?: emptyList()
-                }
-            } catch (_: NoClassDefFoundError) {
-                // 무시하고 fallback
-            }
+        for (support in activeSupports) {
+            support.extractImports(psiFile)?.let { return it }
         }
+        return textBasedImportFallback(psiFile)
+    }
 
-        // Fallback: 텍스트 기반 import 추출
-        return PsiTreeUtil.findChildrenOfType(psiFile, PsiElement::class.java)
+    /**
+     * fallback: PSI 분류 없이 토큰 텍스트만 보는 단순 휴리스틱.
+     *
+     * Python/JS/Go 등 미등록 언어를 대충 처리하기 위한 안전망. 정확도가 낮으므로 50개로 절단해
+     * 컨텍스트 폭주를 방지한다.
+     */
+    private fun textBasedImportFallback(psiFile: PsiFile): List<String> =
+        PsiTreeUtil.findChildrenOfType(psiFile, PsiElement::class.java)
             .filter { it.text.startsWith("import ") }
             .map { it.text.removePrefix("import ").trim().trimEnd(';') }
             .take(50)
-    }
-
-    private fun collectDiagnostics(project: Project, file: VirtualFile): List<DiagnosticDto> {
-        // Phase 1에서는 빈 목록으로 시작, Phase 2에서 구체화
-        return emptyList()
-    }
 }

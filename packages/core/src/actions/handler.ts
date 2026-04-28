@@ -1,6 +1,6 @@
 import { join } from 'path'
 import { loadPrompt } from '../utils/prompt_loader.js'
-import type { CodeActionPayload, CodeActionType } from '../ipc/protocol.js'
+import type { CodeActionPayload, CodeActionType } from '@omc/protocol'
 import type { LLMProvider } from '../providers/types.js'
 import type { HostAdapter } from '../host/interface.js'
 import { makeLogger } from '../utils/logger.js'

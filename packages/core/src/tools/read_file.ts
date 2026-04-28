@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { readFile } from 'fs/promises'
+import { readFile, stat } from 'fs/promises'
 import { registerTool } from './registry.js'
-import { markFileRead } from './edit_file.js'
+import { defaultFileReadCache } from './file_read_cache.js'
 import { resolveSecurePath } from '../utils/path.js'
 import type { HostAdapter } from '../host/interface.js'
 
@@ -38,10 +38,13 @@ grep_tool 로 위치를 먼저 파악한 뒤 startLine/endLine 으로 좁혀 읽
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
     const absPath = resolveSecurePath(args.path, host.getProjectRoot())
-    const content = await readFile(absPath, 'utf-8')
+    const [content, st] = await Promise.all([
+      readFile(absPath, 'utf-8'),
+      stat(absPath),
+    ])
 
-    // edit_file의 stale-write guard에 등록
-    markFileRead(absPath, content)
+    // edit_file의 stale-write guard 에 등록 (mtime 포함)
+    defaultFileReadCache.markRead(absPath, content, st.mtimeMs)
 
     const lines = content.split('\n')
     if (args.startLine || args.endLine) {

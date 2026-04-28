@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './styles/theme.css'
 import { sendToHost } from './bridge/jcef'
+import { HostBridgeProvider } from './bridge/HostBridgeContext'
 
 function serializeArgs(args: unknown[]): string {
   return args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ')
@@ -64,6 +65,8 @@ window.addEventListener('unhandledrejection', (e) => {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <HostBridgeProvider>
+      <App />
+    </HostBridgeProvider>
   </React.StrictMode>
 )

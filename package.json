@@ -6,6 +6,7 @@
     "build:webview": "pnpm --filter @omc/webview build",
     "dev:webview": "pnpm --filter @omc/webview dev",
     "build:all": "pnpm run build:core && pnpm run build:webview",
+    "type-check": "pnpm -r exec tsc --noEmit",
     "test": "pnpm -r --if-present test",
     "test:run": "pnpm -r --if-present test:run",
     "lint": "eslint .",

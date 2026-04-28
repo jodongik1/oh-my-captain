@@ -45,13 +45,19 @@ export interface LLMProvider {
   getCapabilities?(modelId: string): Promise<ModelCapability[]>
 }
 
-export interface ImageAttachment {
+/**
+ * LLM SDK 호출에 직접 전달되는 이미지 입력 형식.
+ * IPC/UI 형식(@omc/protocol 의 ImageAttachment) 에서 kind/filename 같은 메타를 떨군 축소형.
+ * - protocol.ImageAttachment: 와이어 형식 (UI ↔ host ↔ core)
+ * - ProviderImageInput: provider stream 호출 직전 LLM SDK 가 받는 형식
+ */
+export interface ProviderImageInput {
   mediaType: string  // 'image/png' 등
   data: string       // base64 (no data: prefix)
 }
 
 export type Message =
   | { role: 'system'; content: string }
-  | { role: 'user'; content: string; attachments?: ImageAttachment[] }
+  | { role: 'user'; content: string; attachments?: ProviderImageInput[] }
   | { role: 'assistant'; content: string; tool_calls?: ToolCall[] }
   | { role: 'tool'; tool_call_id: string; content: string }

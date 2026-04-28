@@ -44,6 +44,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.1
         version: 1.29.0(zod@3.25.76)
+      '@omc/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@streamparser/json':
         specifier: ^0.0.22
         version: 0.0.22
@@ -154,8 +157,21 @@ importers:
         specifier: ^4.1.4
         version: 4.1.4(@types/node@22.19.17)(vite@6.4.2(@types/node@22.19.17)(tsx@4.21.0))
 
+  packages/protocol:
+    dependencies:
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+
   packages/webview:
     dependencies:
+      '@omc/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       '@types/react-syntax-highlighter':
         specifier: ^15.5.13
         version: 15.5.13

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { globby } from 'globby'
-import { join, isAbsolute } from 'path'
 import { registerTool } from './registry.js'
+import { resolvePathOrRoot } from './_base.js'
 import type { HostAdapter } from '../host/interface.js'
 
 const argsSchema = z.object({
@@ -43,9 +43,7 @@ list_dir 로 트리를 한 단계씩 내려가는 것보다 훨씬 효율적입�
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
-    const cwd = args.cwd
-      ? (isAbsolute(args.cwd) ? args.cwd : join(host.getProjectRoot(), args.cwd))
-      : host.getProjectRoot()
+    const cwd = resolvePathOrRoot(args.cwd, host)
 
     const files = await globby(args.pattern, {
       cwd,

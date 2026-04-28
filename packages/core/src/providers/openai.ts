@@ -1,25 +1,21 @@
 import OpenAI from 'openai'
-import type { LLMProvider, Message, StreamChunk, AssistantMessage, ToolCall } from './types.js'
+import { BaseProvider } from './base.js'
+import { BasicStreamProcessor } from './stream_processor.js'
+import type { Message, StreamChunk, AssistantMessage, ToolCall, ModelCapability } from './types.js'
 import type { ToolDefinition } from '../tools/registry.js'
 
-export class OpenAIProvider implements LLMProvider {
+export class OpenAIProvider extends BaseProvider {
+  readonly name = 'openai'
   private client: OpenAI
 
-  constructor(private config: {
-    model: string
-    apiKey: string
-    baseUrl: string
-    contextWindow: number
-    requestTimeoutMs: number
-  }) {
+  constructor(config: { model: string; apiKey: string; baseUrl: string; contextWindow: number; requestTimeoutMs: number }) {
+    super(config)
     this.client = new OpenAI({
-      apiKey: this.config.apiKey,
-      baseURL: this.config.baseUrl,
-      timeout: this.config.requestTimeoutMs,
+      apiKey: config.apiKey,
+      baseURL: config.baseUrl,
+      timeout: config.requestTimeoutMs,
     })
   }
-
-  readonly name = 'openai'
 
   async stream(
     messages: Message[],
@@ -27,11 +23,7 @@ export class OpenAIProvider implements LLMProvider {
     onChunk: (chunk: StreamChunk) => void,
     signal?: AbortSignal
   ): Promise<AssistantMessage> {
-    const timeoutMs = this.config.requestTimeoutMs || 120_000
-    const timeoutSignal = AbortSignal.timeout(timeoutMs)
-    const effectiveSignal = signal
-      ? AbortSignal.any([signal, timeoutSignal])
-      : timeoutSignal
+    const { effective, timeout, timeoutMs } = this.makeEffectiveSignal(signal)
 
     const openAiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = messages.map(m => {
       if (m.role === 'tool') {
@@ -44,15 +36,13 @@ export class OpenAIProvider implements LLMProvider {
           tool_calls: m.tool_calls.map(tc => ({
             id: tc.id,
             type: 'function' as const,
-            function: { name: tc.function.name, arguments: JSON.stringify(tc.function.arguments) }
-          }))
+            function: { name: tc.function.name, arguments: JSON.stringify(tc.function.arguments) },
+          })),
         }
       }
-      // user 메시지의 이미지 첨부 → OpenAI multipart (image_url + text)
-      if (m.role === 'user' && (m as { attachments?: { mediaType: string; data: string }[] }).attachments?.length) {
-        const atts = (m as { attachments: { mediaType: string; data: string }[] }).attachments
+      if (BaseProvider.hasAttachments(m)) {
         const parts: OpenAI.Chat.ChatCompletionContentPart[] = []
-        for (const a of atts) {
+        for (const a of m.attachments) {
           parts.push({
             type: 'image_url',
             image_url: { url: `data:${a.mediaType};base64,${a.data}` },
@@ -61,40 +51,40 @@ export class OpenAIProvider implements LLMProvider {
         if (m.content) parts.push({ type: 'text', text: m.content })
         return { role: 'user' as const, content: parts }
       }
-      return { role: m.role as any, content: m.content }
+      return { role: m.role as 'user' | 'assistant' | 'system', content: m.content }
     })
 
-    const openAiTools: OpenAI.Chat.ChatCompletionTool[] | undefined =
-      tools.length > 0
-        ? tools.map(t => ({
-            type: 'function' as const,
-            function: {
-              name: t.function.name,
-              description: t.function.description,
-              parameters: t.function.parameters as Record<string, unknown>
-            }
-          }))
-        : undefined
+    const openAiTools: OpenAI.Chat.ChatCompletionTool[] | undefined = tools.length > 0
+      ? tools.map(t => ({
+          type: 'function' as const,
+          function: {
+            name: t.function.name,
+            description: t.function.description,
+            parameters: t.function.parameters as Record<string, unknown>,
+          },
+        }))
+      : undefined
 
     const stream = await this.client.chat.completions.create({
-      model: this.config.model,
+      model: this.baseConfig.model,
       messages: openAiMessages,
       tools: openAiTools,
       stream: true,
-    }, { signal: effectiveSignal })
+    }, { signal: effective })
 
+    const processor = new BasicStreamProcessor()
     let fullContent = ''
     const toolCallsMap = new Map<number, { id: string; name: string; args: string }>()
 
     try {
       for await (const chunk of stream) {
-        if (effectiveSignal.aborted) break
+        if (effective.aborted) break
         const delta = chunk.choices[0]?.delta
         if (!delta) continue
 
         if (delta.content) {
           fullContent += delta.content
-          onChunk({ token: delta.content })
+          processor.feedText(delta.content, onChunk)
         }
 
         if (delta.tool_calls) {
@@ -107,11 +97,14 @@ export class OpenAIProvider implements LLMProvider {
           }
         }
       }
-    } catch (e: any) {
-      if (effectiveSignal.aborted) {
+    } catch (e) {
+      if (effective.aborted) {
+        if (timeout.aborted) throw this.makeTimeoutError(timeoutMs)
         return { role: 'assistant', content: fullContent, tool_calls: undefined }
       }
       throw e
+    } finally {
+      processor.flush(onChunk)
     }
 
     const toolCalls: ToolCall[] | undefined = toolCallsMap.size > 0
@@ -119,26 +112,24 @@ export class OpenAIProvider implements LLMProvider {
           id: tc.id,
           function: {
             name: tc.name,
-            arguments: tc.args ? JSON.parse(tc.args) : {}
-          }
+            arguments: tc.args ? JSON.parse(tc.args) : {},
+          },
         }))
       : undefined
 
-    return { role: 'assistant', content: fullContent, tool_calls: toolCalls }
+    return { role: 'assistant', content: processor.sanitizeContent(fullContent), tool_calls: toolCalls }
   }
 
-  async getCapabilities(modelId: string): Promise<string[]> {
-    // OpenAI /v1/models 는 capability 정보 미노출. 모델 이름 패턴으로 추론.
-    const m = modelId.toLowerCase()
-    const caps: string[] = ['completion', 'tools']
-    if (/gpt-4o|gpt-4-turbo|gpt-4-vision|gpt-5|o1|o3|o4/.test(m)) caps.push('vision')
-    if (/o1|o3|o4|gpt-5/.test(m)) caps.push('thinking')
-    return caps
+  async getCapabilities(modelId: string): Promise<ModelCapability[]> {
+    return this.fallbackCapabilities(modelId, {
+      vision: /gpt-4o|gpt-4-turbo|gpt-4-vision|gpt-5|o1|o3|o4/,
+      thinking: /o1|o3|o4|gpt-5/,
+    })
   }
 
   async complete(prompt: string): Promise<string> {
     const response = await this.client.chat.completions.create({
-      model: this.config.model,
+      model: this.baseConfig.model,
       messages: [{ role: 'user', content: prompt }],
     })
     return response.choices[0]?.message?.content ?? ''

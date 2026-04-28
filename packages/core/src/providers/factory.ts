@@ -10,40 +10,41 @@ import { OpenAIProvider } from './openai.js'
 import { AnthropicProvider } from './anthropic.js'
 import { SettingsManager } from '../settings/manager.js'
 import type { LLMProvider } from './types.js'
-import type { CaptainSettings } from '../settings/types.js'
+import type { ApiProvider, CaptainSettings } from '../settings/types.js'
 import type { CoreState } from '../ipc/handlers/state.js'
+
+type ProviderBuilder = (s: CaptainSettings) => LLMProvider
+
+/**
+ * provider 종류 → 인스턴스 빌더 매핑.
+ * Record<ApiProvider, ...> 강제로 새 ApiProvider 추가 시 컴파일 에러 → 누락 방지 (OCP).
+ */
+const PROVIDER_BUILDERS: Record<ApiProvider, ProviderBuilder> = {
+  openai: (s) => new OpenAIProvider({
+    model: s.provider.openAiModel,
+    apiKey: s.provider.openAiApiKey,
+    baseUrl: s.provider.openAiBaseUrl,
+    contextWindow: s.model.contextWindow,
+    requestTimeoutMs: s.model.requestTimeoutMs,
+  }),
+  anthropic: (s) => new AnthropicProvider({
+    model: s.provider.anthropicModel,
+    apiKey: s.provider.anthropicApiKey,
+    contextWindow: s.model.contextWindow,
+    requestTimeoutMs: s.model.requestTimeoutMs,
+  }),
+  ollama: (s) => new OllamaProvider({
+    model: s.provider.ollamaModel,
+    baseUrl: s.provider.ollamaBaseUrl,
+    apiKey: s.provider.ollamaApiKey || undefined,
+    contextWindow: s.model.contextWindow,
+    requestTimeoutMs: s.model.requestTimeoutMs,
+  }),
+}
 
 /** 설정에 따라 적절한 LLM 프로바이더를 생성합니다 */
 export function createProvider(s: CaptainSettings): LLMProvider {
-  const timeout = s.model.requestTimeoutMs
-  const ctx = s.model.contextWindow
-
-  switch (s.provider.provider) {
-    case 'openai':
-      return new OpenAIProvider({
-        model: s.provider.openAiModel,
-        apiKey: s.provider.openAiApiKey,
-        baseUrl: s.provider.openAiBaseUrl,
-        contextWindow: ctx,
-        requestTimeoutMs: timeout,
-      })
-    case 'anthropic':
-      return new AnthropicProvider({
-        model: s.provider.anthropicModel,
-        apiKey: s.provider.anthropicApiKey,
-        contextWindow: ctx,
-        requestTimeoutMs: timeout,
-      })
-    case 'ollama':
-    default:
-      return new OllamaProvider({
-        model: s.provider.ollamaModel,
-        baseUrl: s.provider.ollamaBaseUrl,
-        apiKey: s.provider.ollamaApiKey || undefined,
-        contextWindow: ctx,
-        requestTimeoutMs: timeout,
-      })
-  }
+  return PROVIDER_BUILDERS[s.provider.provider](s)
 }
 
 /**

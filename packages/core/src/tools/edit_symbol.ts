@@ -1,10 +1,10 @@
 import { z } from 'zod'
-import { readFile, writeFile } from 'fs/promises'
-import { join, isAbsolute } from 'path'
+import { readFile, writeFile, stat } from 'fs/promises'
+import { resolveSecurePath } from '../utils/path.js'
 import { registerTool } from './registry.js'
 import { generateUnifiedDiff } from '../utils/diff.js'
 import { getParserForFile, getSupportedExtensions } from '../utils/tree_sitter.js'
-import { markFileRead } from './edit_file.js'
+import { defaultFileReadCache } from './file_read_cache.js'
 import { makeLogger } from '../utils/logger.js'
 
 const log = makeLogger('edit_symbol.ts')
@@ -76,7 +76,7 @@ registerTool(
     concurrencySafe: false,
     preview: async (rawArgs, host) => {
       const args = argsSchema.parse(rawArgs)
-      const absPath = isAbsolute(args.path) ? args.path : join(host.getProjectRoot(), args.path)
+      const absPath = resolveSecurePath(args.path, host.getProjectRoot())
       try {
         const currentContent = await readFile(absPath, 'utf-8')
         const range = await findSymbolRange(absPath, currentContent, args.symbolName, args.symbolType)
@@ -90,7 +90,7 @@ registerTool(
   },
   async (rawArgs, host: HostAdapter) => {
     const args = argsSchema.parse(rawArgs)
-    const absPath = isAbsolute(args.path) ? args.path : join(host.getProjectRoot(), args.path)
+    const absPath = resolveSecurePath(args.path, host.getProjectRoot())
 
     log.info({ path: args.path, symbolName: args.symbolName, symbolType: args.symbolType }, '[edit_symbol] 시작')
 
@@ -124,7 +124,8 @@ registerTool(
       throw e
     }
 
-    markFileRead(absPath, newContent)
+    const newStat = await stat(absPath).catch(() => null)
+    defaultFileReadCache.markRead(absPath, newContent, newStat?.mtimeMs ?? 0)
 
     const diff = generateUnifiedDiff(args.path, currentContent, newContent)
     const linesChanged = diff.split('\n').filter(l => l.startsWith('+') || l.startsWith('-')).length

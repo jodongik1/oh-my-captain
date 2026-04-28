@@ -1,5 +1,5 @@
 import { useState, type MouseEvent } from 'react'
-import { sendToHost } from '../../bridge/jcef'
+import { useTimelineActions } from '../../hooks/useTimelineActions'
 
 interface BashRowProps {
   command: string
@@ -11,6 +11,7 @@ const PREVIEW_LINES = 6
 
 export default function BashRow({ command, result, isActive }: BashRowProps) {
   const [expanded, setExpanded] = useState(false)
+  const { openToolOutput } = useTimelineActions()
   const hasOutput = result && (result.stdout || result.stderr || result.error)
   const failed = result && (result.exitCode !== 0 || result.error)
 
@@ -32,13 +33,7 @@ export default function BashRow({ command, result, isActive }: BashRowProps) {
   const openInTab = (e: MouseEvent) => {
     e.stopPropagation()
     if (!hasOutput) return
-    sendToHost({
-      type: 'open_tool_output',
-      payload: {
-        title: `Bash tool output`,
-        content: outputText
-      }
-    })
+    openToolOutput('Bash tool output', outputText)
   }
 
   return (

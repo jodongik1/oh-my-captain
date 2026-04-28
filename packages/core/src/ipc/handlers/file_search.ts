@@ -69,7 +69,7 @@ const IGNORE_GLOBS = [
 export function registerFileSearchHandlers(state: CoreState) {
   registerHandler('file_search', async (msg) => {
     try {
-      const { query } = msg.payload as { query: string }
+      const { query } = msg.payload
 
       if (!state.host) {
         throw new Error('Core is not initialized')

@@ -8,6 +8,7 @@
 #   ./build.sh core             # Core만 빌드
 #   ./build.sh webview          # Webview만 빌드
 #   ./build.sh dist             # 배포용 플러그인 zip 생성
+#   ./build.sh logs             # sandbox idea.log 를 tail -f
 #   ./build.sh clean            # 빌드 산출물 정리
 #   ./build.sh help             # 사용법 출력
 #
@@ -199,6 +200,24 @@ run_ide() {
     (cd "$INTELLIJ_DIR" && ./gradlew runIde)
 }
 
+# ── idea.log tail ──
+# IntelliJ Logger 의 INFO/DEBUG 는 stdout 이 아닌 idea.log 로만 흘러가므로
+# 콘솔 stdout 만 보면 OMC 로그가 안 보인다. 이 명령으로 sandbox 의 idea.log 를 실시간 추적한다.
+tail_logs() {
+    local log_file
+    log_file=$(find "$INTELLIJ_DIR/build/idea-sandbox" -path "*/log/idea.log" -type f 2>/dev/null | head -1)
+
+    if [[ -z "$log_file" || ! -f "$log_file" ]]; then
+        err "idea.log 가 없습니다 — 먼저 ./build.sh run 으로 IDE 를 한 번 띄워주세요."
+        exit 1
+    fi
+
+    log "Tailing: $log_file"
+    log "${DIM}(OMC 로그만 보려면 ./build.sh logs | grep OMC)${NC}"
+    echo ""
+    tail -f "$log_file"
+}
+
 # ── Clean ──
 clean() {
     step_increment
@@ -241,6 +260,7 @@ show_help() {
     echo -e "  ${CYAN}./build.sh core${NC}         Core만 빌드"
     echo -e "  ${CYAN}./build.sh webview${NC}      Webview만 빌드"
     echo -e "  ${CYAN}./build.sh dist${NC}         배포용 플러그인 zip 생성"
+    echo -e "  ${CYAN}./build.sh logs${NC}         sandbox idea.log 를 tail -f (OMC 플러그인 로그 추적)"
     echo -e "  ${CYAN}./build.sh clean${NC}        빌드 산출물 정리"
     echo -e "  ${CYAN}./build.sh help${NC}         사용법 출력"
     echo ""
@@ -344,6 +364,9 @@ case "$CMD" in
         build_webview
         build_dist
         print_summary
+        ;;
+    logs)
+        tail_logs
         ;;
     clean)
         TOTAL_STEPS=1

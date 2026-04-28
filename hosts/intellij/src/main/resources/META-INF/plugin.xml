@@ -11,9 +11,6 @@
   <extensions defaultExtensionNs="com.intellij">
     <applicationService
       serviceImplementation="com.ohmycaptain.core.CoreApplicationService"/>
-    <!-- EmbeddedWebServer는 CaptainToolWindowFactory에서 직접 생성 (projectService 등록 시 이중 인스턴스 문제) -->
-    <projectService
-      serviceImplementation="com.ohmycaptain.settings.CaptainSettingsService"/>
     <toolWindow
       id="Oh My Captain"
       anchor="right"

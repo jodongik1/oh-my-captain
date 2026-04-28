@@ -1,25 +1,10 @@
 import { useReducer, Dispatch } from 'react'
+import type { SessionSummary, ModelInfo, CaptainSettings } from '@omc/protocol'
+
+// 다른 webview 모듈은 여전히 `import { SessionSummary } from '../store'` 형태로 가져온다 — 호환 re-export.
+export type { SessionSummary, ModelInfo, CaptainSettings } from '@omc/protocol'
 
 export type Mode = 'plan' | 'ask' | 'auto'
-
-export interface SessionSummary {
-  id: string
-  title: string
-  updatedAt: number
-  messageCount: number
-  preview: string
-}
-
-export interface ModelInfo {
-  id: string
-  name: string
-  contextWindow?: number
-  /**
-   * 모델 capability — 'completion' / 'vision' / 'tools' / 'thinking' 등.
-   * core 가 provider 별로 채워 보냄. 비어있으면 webview 가 모델 이름 패턴으로 fallback.
-   */
-  capabilities?: string[]
-}
 
 export interface ApprovalInfo {
   requestId: string
@@ -57,26 +42,72 @@ export interface VerifyInfo {
   output?: string
   durationMs?: number
   timedOut?: boolean
+  /** 'env' 면 빌드 환경 문제 — 사용자에게 노란 톤으로 안내 */
+  failureKind?: 'code' | 'env'
 }
 
-export interface TimelineEntry {
+/**
+ * 타임라인 엔트리 — type 별로 가지는 필드가 명확히 다르므로 discriminated union 으로 정의.
+ * 공통 필드(id/timestamp/interrupted) 만 base 에 두고, type-specific 필드는 각 변형에 둔다.
+ */
+interface TimelineBase {
   id: string
-  type: 'user' | 'stream' | 'tool_start' | 'tool_result' | 'thinking' | 'error' | 'approval' | 'verify' | 'interrupted'
-  source?: 'chat' | 'action'  // stream 타입 전용: 일반 채팅 vs 코드 액션 응답
-  content?: string
-  tool?: string
-  args?: unknown
-  result?: unknown
-  durationMs?: number
   timestamp: number
-  isStreaming?: boolean
-  isActive?: boolean       // 현재 진행 중 여부 (dot 애니메이션용)
-  startedAt?: number       // 도구 시작 시간 (소요시간 계산용)
-  approval?: ApprovalInfo  // approval 타입 전용
-  verify?: VerifyInfo      // verify 타입 전용
-  attachments?: Attachment[]  // user 타입 전용 (이미지 등 첨부)
-  interrupted?: boolean    // 사용자 abort 로 중단된 entry 표시
+  /** 사용자 abort 로 중단된 entry 는 회색 dot + retry CTA 로 표시 */
+  interrupted?: boolean
 }
+
+export type TimelineEntry =
+  | (TimelineBase & {
+      type: 'user'
+      content: string
+      attachments?: Attachment[]
+    })
+  | (TimelineBase & {
+      type: 'stream'
+      /** 'chat' | 'action' — 일반 채팅 vs 코드 액션 응답 (UI 분기용) */
+      source?: 'chat' | 'action'
+      content: string
+      isStreaming?: boolean
+    })
+  | (TimelineBase & {
+      type: 'tool_start'
+      tool: string
+      args: unknown
+      result?: unknown
+      isActive?: boolean
+      startedAt?: number
+    })
+  | (TimelineBase & {
+      type: 'tool_result'
+      tool: string
+      result: unknown
+    })
+  | (TimelineBase & {
+      type: 'thinking'
+      content?: string
+      durationMs?: number
+      isActive?: boolean
+    })
+  | (TimelineBase & {
+      type: 'error'
+      content: string
+    })
+  | (TimelineBase & {
+      type: 'approval'
+      approval: ApprovalInfo
+      isActive?: boolean
+    })
+  | (TimelineBase & {
+      type: 'verify'
+      verify?: VerifyInfo
+      isActive?: boolean
+      durationMs?: number
+      startedAt?: number
+    })
+  | (TimelineBase & {
+      type: 'interrupted'
+    })
 
 export interface ActivityState {
   type: 'thinking' | 'streaming' | 'tool' | 'preparing'
@@ -103,7 +134,7 @@ export interface AppState {
   slashFilter: string | null   // null = 팝업 닫힘
   showModelSelector: boolean
   isConfigured: boolean | null // null = 하직 로드 전, false = 미설정 온보딩
-  settings: any | null         // CaptainSettings 타입 (store에서는 any 표기)
+  settings: CaptainSettings | null
   fileSearchResults: string[]
   pendingAttachments: Attachment[]   // 다음 메시지에 첨부될 이미지들
 }
@@ -132,7 +163,7 @@ export type AppAction =
   | { type: 'DROP_LAST_THINKING' }
   | { type: 'COMPLETE_TOOL'; tool: string; result: unknown }
   | { type: 'PRUNE_PREAMBLE' }
-  | { type: 'SETTINGS_LOADED'; isConfigured: boolean; settings: any }
+  | { type: 'SETTINGS_LOADED'; isConfigured: boolean; settings: CaptainSettings }
   | { type: 'ADD_APPROVAL'; entry: TimelineEntry }
   | { type: 'RESOLVE_APPROVAL'; requestId: string; approved: boolean }
   | { type: 'ELEVATE_STREAM_TO_THINKING' }
@@ -275,6 +306,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case 'SET_SLASH_FILTER':
+      // 동일 값으로의 setState 가드 — 채팅 입력은 매 키 입력마다 (대부분 null → null) 호출되므로
+      // 새 state 객체를 만들면 App 전체가 re-render 되어 Timeline / Mermaid 비용이 발생한다.
+      if (state.slashFilter === action.filter && (action.filter === null || !state.showModelSelector)) return state
       return { ...state, slashFilter: action.filter, ...(action.filter !== null ? { showModelSelector: false } : {}) }
 
     case 'TOGGLE_MODEL_SELECTOR':
@@ -297,11 +331,13 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       // 마지막 active thinking entry를 찾아서 완료 처리
       const tIdx = findLastIndex(state.timeline, e => e.type === 'thinking' && e.isActive === true)
       if (tIdx >= 0) {
-        const updated = {
-          ...state.timeline[tIdx],
+        const target = state.timeline[tIdx]
+        if (target.type !== 'thinking') return state  // narrowing (이미 findLastIndex 가 보장)
+        const updated: TimelineEntry = {
+          ...target,
           durationMs: action.durationMs,
           isActive: false,
-          content: action.content
+          content: action.content,
         }
         return {
           ...state,
@@ -330,10 +366,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         e => e.type === 'tool_start' && e.tool === action.tool && e.isActive === true
       )
       if (toolIdx >= 0) {
-        const updated = {
-          ...state.timeline[toolIdx],
+        const target = state.timeline[toolIdx]
+        if (target.type !== 'tool_start') return state
+        const updated: TimelineEntry = {
+          ...target,
           result: action.result,
-          isActive: false
+          isActive: false,
         }
         return {
           ...state,
@@ -385,17 +423,19 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'RESOLVE_APPROVAL': {
       const aIdx = findLastIndex(
         state.timeline,
-        e => e.type === 'approval' && e.approval?.requestId === action.requestId
+        e => e.type === 'approval' && e.approval.requestId === action.requestId
       )
       if (aIdx >= 0) {
-        const updated = {
-          ...state.timeline[aIdx],
+        const target = state.timeline[aIdx]
+        if (target.type !== 'approval') return state
+        const updated: TimelineEntry = {
+          ...target,
           isActive: false,
           approval: {
-            ...state.timeline[aIdx].approval!,
+            ...target.approval,
             resolved: true,
             approved: action.approved,
-          }
+          },
         }
         return {
           ...state,
@@ -457,9 +497,12 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'MARK_INTERRUPTED': {
       // 진행 중이던 entry 들(stream/tool_start/thinking/verify/approval) 을 interrupted 로 마크.
       // 마지막에 별도 'interrupted' entry 를 추가하여 사용자에게 중단을 명시 + retry 옵션 제공.
-      const updated = state.timeline.map(e => {
-        if (e.isActive || (e.type === 'stream' && e.isStreaming)) {
-          return { ...e, isActive: false, isStreaming: false, interrupted: true }
+      const updated: TimelineEntry[] = state.timeline.map(e => {
+        if (e.type === 'stream' && e.isStreaming) {
+          return { ...e, isStreaming: false, interrupted: true }
+        }
+        if ((e.type === 'tool_start' || e.type === 'thinking' || e.type === 'verify' || e.type === 'approval') && e.isActive) {
+          return { ...e, isActive: false, interrupted: true }
         }
         return e
       })
@@ -480,8 +523,10 @@ export function appReducer(state: AppState, action: AppAction): AppState {
       if (action.verify.command === '(skip)') return state
       const idx = findLastIndex(state.timeline, e => e.type === 'verify' && e.isActive === true)
       if (idx >= 0) {
+        const target = state.timeline[idx]
+        if (target.type !== 'verify') return state
         const updated: TimelineEntry = {
-          ...state.timeline[idx],
+          ...target,
           isActive: false,
           durationMs: action.verify.durationMs,
           verify: action.verify,

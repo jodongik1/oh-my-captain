@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { CaptainSettings, DEFAULT_SETTINGS } from './types.js'
+import { captainSettingsSchema } from './schema.js'
 import { makeLogger } from '../utils/logger.js'
 
 const log = makeLogger('manager.ts')
@@ -26,20 +27,19 @@ export class SettingsManager {
       const fileData = fs.readFileSync(filePath, 'utf-8')
       const parsed = JSON.parse(fileData) as Partial<CaptainSettings>
 
-      // Merge with defaults to ensure schema consistency
+      // 기본값 병합 후 zod 로 최종 검증 — 손상된 settings.json 도 fallback 으로 복구.
       const merged: CaptainSettings = {
-        provider: {
-          ...DEFAULT_SETTINGS.provider,
-          ...(parsed.provider || {})
-        },
-        model: {
-          ...DEFAULT_SETTINGS.model,
-          ...(parsed.model || {})
-        },
-        cachedModels: parsed.cachedModels ?? []
+        provider: { ...DEFAULT_SETTINGS.provider, ...(parsed.provider ?? {}) },
+        model: { ...DEFAULT_SETTINGS.model, ...(parsed.model ?? {}) },
+        cachedModels: parsed.cachedModels ?? [],
       }
-      log.info("\n", merged)
-      return { settings: merged, isFirstTime: false }
+      const validation = captainSettingsSchema.safeParse(merged)
+      if (!validation.success) {
+        log.warn('settings.json 검증 실패 — 기본값 사용:', validation.error.message)
+        return { settings: { ...DEFAULT_SETTINGS }, isFirstTime: true }
+      }
+      log.info('Loaded settings:\n', validation.data)
+      return { settings: validation.data, isFirstTime: false }
     } catch (e) {
       log.error('Load error, using defaults:\n', e)
       return { settings: { ...DEFAULT_SETTINGS }, isFirstTime: true }

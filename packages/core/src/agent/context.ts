@@ -1,6 +1,6 @@
 import { join } from 'path'
 import { loadPrompt } from '../utils/prompt_loader.js'
-import type { FileContext } from '../ipc/protocol.js'
+import type { FileContext } from '@omc/protocol'
 import type { ToolDefinition } from '../tools/registry.js'
 
 const BUNDLED_PROMPTS_DIR = join(__dirname, 'prompts')
@@ -12,6 +12,8 @@ interface SystemPromptInput {
   openFiles: FileContext[]
   rules: string
   memory: string
+  /** 자동 감지된 프로젝트 스택 요약 (빌드 도구 / 테스트 프레임워크 / 명령어). 빈 문자열이면 섹션 자체 생략. */
+  projectStack: string
   os: string
   shell: string
   tools: ToolDefinition[]
@@ -50,7 +52,7 @@ const MODE_INSTRUCTIONS: Record<string, string> = {
 }
 
 export async function buildSystemPrompt(input: SystemPromptInput): Promise<string> {
-  const { projectRoot, openFiles, rules, memory, os, shell, tools, mode } = input
+  const { projectRoot, openFiles, rules, memory, projectStack, os, shell, tools, mode } = input
 
   const template = await loadPrompt('system_prompt.md', projectRoot, BUNDLED_PROMPTS_DIR)
 
@@ -70,6 +72,9 @@ export async function buildSystemPrompt(input: SystemPromptInput): Promise<strin
   const memorySection = memory
     ? `## Project Memory\n\nThe following is persistent knowledge saved from previous sessions:\n\n${memory}`
     : ''
+  const projectStackSection = projectStack
+    ? `## 프로젝트 스택 (자동 감지)\n\n${projectStack}\n\n_빌드/테스트/lint 작업 시 위 스택과 명령을 따르세요. 추가 메타정보는 \`/init\` 으로 MEMORY.md 에 영구 저장할 수 있습니다._`
+    : ''
 
   return template
     .replace('{{projectRoot}}', projectRoot)
@@ -77,6 +82,7 @@ export async function buildSystemPrompt(input: SystemPromptInput): Promise<strin
     .replace('{{shell}}', shell)
     .replace('{{toolDescriptions}}', toolDescriptions)
     .replace('{{openFileSummary}}', openFileSummary)
+    .replace('{{projectStackSection}}', projectStackSection)
     .replace('{{rulesSection}}', rulesSection)
     .replace('{{memorySection}}', memorySection)
     .replace('{{modeLabel}}', MODE_LABEL[mode] ?? mode)

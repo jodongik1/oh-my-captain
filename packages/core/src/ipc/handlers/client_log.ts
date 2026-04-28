@@ -13,8 +13,7 @@ const LOG_METHOD: Record<string, keyof typeof log> = {
 
 export function registerClientLogHandlers() {
   registerHandler('client_log', async (msg) => {
-    const payload = msg.payload as { level: string; message: string }
-    const method = LOG_METHOD[payload.level] ?? 'info'
-    log[method](payload.message)
+    const method = LOG_METHOD[msg.payload.level] ?? 'info'
+    log[method](msg.payload.message)
   })
 }

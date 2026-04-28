@@ -1,4 +1,4 @@
-import type { FileContext, ApprovalRequest, CoreMessage, Diagnostic } from '../ipc/protocol.js'
+import type { FileContext, ApprovalRequest, CoreMessage, Diagnostic } from '@omc/protocol'
 
 /** Core → Host 이벤트 타입 매핑 (타입 안전한 emit을 위함) */
 export type CoreEventMap = {

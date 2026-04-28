@@ -436,6 +436,12 @@ body {
   box-shadow: 0 0 4px rgba(224, 108, 117, 0.25);
 }
 
+/* 환경 경고 (코드 변경과 무관한 환경 문제): 노란색 dot */
+.timeline-dot.dot-warn {
+  background: var(--mode-ask, #d97706);
+  box-shadow: 0 0 4px rgba(217, 119, 6, 0.25);
+}
+
 /* 비활성 (일반 완료): 회색 dot */
 .timeline-dot.dot-inactive {
   background: var(--fg-faint);
@@ -847,12 +853,14 @@ body {
 }
 .verify-row.verify-pass .verify-icon { color: var(--tool-read, #4ec994); }
 .verify-row.verify-fail .verify-icon { color: var(--tool-error, #e06c75); }
+.verify-row.verify-env  .verify-icon { color: var(--mode-ask, #d97706); }
 .verify-label {
   color: var(--fg-primary);
   font-weight: 500;
 }
 .verify-row.verify-pass .verify-label { color: var(--tool-read, #4ec994); }
 .verify-row.verify-fail .verify-label { color: var(--tool-error, #e06c75); }
+.verify-row.verify-env  .verify-label { color: var(--mode-ask, #d97706); }
 .verify-cmd {
   color: var(--fg-muted);
   font-weight: 400;
@@ -2372,11 +2380,38 @@ textarea.input-field:disabled {
 }
 
 .mermaid-loading {
-  padding: 16px;
+  padding: 12px 16px;
   color: var(--fg-muted);
   font-size: 12px;
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  background: var(--bg-elevated);
+  border: 1px dashed var(--border-subtle);
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
+.mermaid-loading-header {
+  display: flex;
   align-items: center;
+  gap: 6px;
+}
+
+.mermaid-streaming-preview {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg-base);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+  opacity: 0.7;
 }
 
 .mermaid-error {
@@ -2489,4 +2524,59 @@ textarea.input-field:disabled {
   font-weight: inherit;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+}
+
+/* ── Input textarea overlay (멘션 하이라이트용) ── */
+.textarea-container-relative {
+  position: relative;
+}
+
+.textarea-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  padding: 12px 14px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: var(--fg-primary);
+  overflow-y: hidden;
+}
+
+.textarea-placeholder {
+  color: var(--fg-faint);
+  user-select: none;
+}
+
+/* overlay 와 함께 쓰는 textarea — 글자는 투명하게 두고 caret 만 보임 */
+textarea.input-field-overlay-host {
+  height: auto;
+  position: relative;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--fg-primary);
+}
+
+.footer-right-relative {
+  position: relative;
+}
+
+.file-input-hidden {
+  display: none;
+}
+
+/* ── Error row 재시도 버튼 ── */
+.error-row-retry-btn {
+  margin-left: 8px;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: 12px;
 }
