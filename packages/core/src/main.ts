@@ -3,13 +3,14 @@ import { makeLogger } from './utils/logger.js'
 import { createState } from './ipc/handlers/state.js'
 import { registerLifecycleHandlers } from './ipc/handlers/lifecycle.js'
 import { registerChatHandlers } from './ipc/handlers/chat.js'
-import { registerSteeringHandlers } from './ipc/handlers/steering.js'
 import { registerSessionHandlers } from './ipc/handlers/session.js'
 import { registerSettingsHandlers } from './ipc/handlers/settings.js'
 import { registerModelHandlers } from './ipc/handlers/model.js'
 import { registerCodeActionHandlers } from './ipc/handlers/code_action.js'
 import { registerClientLogHandlers } from './ipc/handlers/client_log.js'
 import { registerFileSearchHandlers } from './ipc/handlers/file_search.js'
+import { registerKeybindingsHandlers } from './ipc/handlers/keybindings.js'
+import { registerShellHandlers } from './ipc/handlers/shell.js'
 
 // ── 도구 등록 (barrel import — 모든 도구를 일괄 등록) ──
 import './tools/index.js'
@@ -32,10 +33,11 @@ startServer(() => {
 
 registerLifecycleHandlers(state)
 registerChatHandlers(state)
-registerSteeringHandlers(state)
 registerSessionHandlers(state)
 registerSettingsHandlers(state)
 registerModelHandlers(state)
 registerCodeActionHandlers(state)
 registerClientLogHandlers()
 registerFileSearchHandlers(state)
+registerKeybindingsHandlers(state)
+registerShellHandlers(state)

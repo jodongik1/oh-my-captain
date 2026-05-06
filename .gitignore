@@ -16,6 +16,12 @@ out/
 hosts/intellij/src/main/resources/webview/
 hosts/intellij/src/main/resources/core/
 
+# ── Oh My Captain — VS Code 호스트 빌드 산출물 ─────────────────────
+hosts/vscode/out/
+hosts/vscode/resources/core/
+hosts/vscode/resources/webview/
+hosts/vscode/*.vsix
+
 # ── Oh My Captain — 런타임 데이터 (사용자별, 커밋 불필요) ─────────
 .captain/
 .oh-my-captain/

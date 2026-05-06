@@ -1,5 +1,5 @@
 import { useReducer, Dispatch } from 'react'
-import type { SessionSummary, ModelInfo, CaptainSettings } from '@omc/protocol'
+import type { SessionSummary, ModelInfo, CaptainSettings, KeybindingsConfig } from '@omc/protocol'
 
 // 다른 webview 모듈은 여전히 `import { SessionSummary } from '../store'` 형태로 가져온다 — 호환 re-export.
 export type { SessionSummary, ModelInfo, CaptainSettings } from '@omc/protocol'
@@ -137,6 +137,8 @@ export interface AppState {
   settings: CaptainSettings | null
   fileSearchResults: string[]
   pendingAttachments: Attachment[]   // 다음 메시지에 첨부될 이미지들
+  /** core 가 ~/.captain/keybindings.json 에서 읽은 사용자 정의 키바인딩 (defaults 와 merge 된 결과) */
+  keybindings: KeybindingsConfig
 }
 
 export type AppAction =
@@ -158,6 +160,7 @@ export type AppAction =
   | { type: 'TOGGLE_MODEL_SELECTOR' }
   | { type: 'ADD_ERROR'; message: string }
   | { type: 'RENAME_SESSION'; sessionId: string; title: string }
+  | { type: 'SET_SESSION_TITLE'; title: string }
   | { type: 'DELETE_SESSION'; sessionId: string }
   | { type: 'COMPLETE_THINKING'; durationMs: number; content?: string }
   | { type: 'DROP_LAST_THINKING' }
@@ -175,6 +178,7 @@ export type AppAction =
   | { type: 'ADD_ATTACHMENTS'; attachments: Attachment[] }
   | { type: 'REMOVE_ATTACHMENT'; index: number }
   | { type: 'CLEAR_ATTACHMENTS' }
+  | { type: 'SET_KEYBINDINGS'; keybindings: KeybindingsConfig }
 
 export const initialState: AppState = {
   mode: 'ask',
@@ -196,6 +200,11 @@ export const initialState: AppState = {
   settings: null,
   fileSearchResults: [],
   pendingAttachments: [],
+  // core 가 keybindings_loaded 를 push 하기 전까지의 안전 기본값 — useChatActions 와 형식 일치.
+  keybindings: {
+    'history:previous': 'ArrowUp',
+    'history:next': 'ArrowDown',
+  },
 }
 
 export function appReducer(state: AppState, action: AppAction): AppState {
@@ -390,6 +399,17 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         sessionTitle: state.sessionId === action.sessionId ? action.title : state.sessionTitle
       }
 
+    case 'SET_SESSION_TITLE':
+      // 현재 세션 타이틀을 즉시 갱신 (sessionId 가 아직 할당되지 않은 New Session 도 포함).
+      // sessions 배열에 매칭되는 항목이 있으면 함께 갱신해 history 와 일관성 유지.
+      return {
+        ...state,
+        sessionTitle: action.title,
+        sessions: state.sessionId
+          ? state.sessions.map(s => s.id === state.sessionId ? { ...s, title: action.title } : s)
+          : state.sessions,
+      }
+
     case 'DELETE_SESSION':
       return {
         ...state,
@@ -493,6 +513,9 @@ export function appReducer(state: AppState, action: AppAction): AppState {
     case 'CLEAR_ATTACHMENTS':
       if (state.pendingAttachments.length === 0) return state
       return { ...state, pendingAttachments: [] }
+
+    case 'SET_KEYBINDINGS':
+      return { ...state, keybindings: action.keybindings }
 
     case 'MARK_INTERRUPTED': {
       // 진행 중이던 entry 들(stream/tool_start/thinking/verify/approval) 을 interrupted 로 마크.

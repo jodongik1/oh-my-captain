@@ -125,6 +125,8 @@ export default function App() {
           onAttachmentsAdd={actions.attachmentsAdd}
           onAttachmentRemove={actions.attachmentRemove}
           onToggleHistory={actions.toggleHistory}
+          timeline={state.timeline}
+          keybindings={state.keybindings}
         />
       )}
     </div>

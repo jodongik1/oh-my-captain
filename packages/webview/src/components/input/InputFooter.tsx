@@ -81,7 +81,7 @@ export default function InputFooter({
           <span>{MODE_LABELS[mode]}</span>
         </button>
 
-        {isBusy && !hasText ? (
+        {isBusy ? (
           <button className="stop-btn" onClick={onAbort} title="중단">
             <Square size={12} fill="white" />
           </button>
@@ -90,7 +90,7 @@ export default function InputFooter({
             className={`send-btn mode-${mode}`}
             disabled={!hasText}
             onClick={onSend}
-            title={isBusy ? '진행 중인 작업에 메시지 주입 (Enter)' : '전송 (Enter)'}
+            title="전송 (Enter)"
           >
             <ArrowUp size={16} strokeWidth={2.5} />
           </button>

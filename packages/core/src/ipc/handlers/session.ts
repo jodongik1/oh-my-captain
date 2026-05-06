@@ -12,7 +12,29 @@ export function registerSessionHandlers(state: CoreState) {
       const { sessionId } = msg.payload
       state.sessionId = sessionId
       const messages = sessionDb.getSessionMessages(sessionId)
-      state.history = messages.map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+      // 도구 호출/결과 메타까지 LLM 컨텍스트에 정확히 복원 — 평문 user/assistant 만 복원하면
+      // 재개 시 모델이 이전 도구 사용을 인지하지 못하는 회귀가 생긴다.
+      state.history = messages.map((m) => {
+        if (m.role === 'tool') {
+          return {
+            role: 'tool' as const,
+            tool_call_id: m.toolCallId ?? '',
+            content: m.content,
+          }
+        }
+        if (m.role === 'assistant') {
+          const tool_calls = m.toolCalls?.map(tc => ({
+            id: tc.id,
+            function: { name: tc.name, arguments: tc.args as Record<string, unknown> },
+          }))
+          return {
+            role: 'assistant' as const,
+            content: m.content,
+            ...(tool_calls && tool_calls.length > 0 ? { tool_calls } : {}),
+          }
+        }
+        return { role: 'user' as const, content: m.content }
+      })
       send({ id: msg.id, type: 'session_history', payload: { sessionId, messages } })
       log.info(`세션 선택: ${sessionId} (${messages.length}개 메시지)`)
     } catch (e) {

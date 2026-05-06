@@ -17,6 +17,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 INTELLIJ_DIR="$ROOT_DIR/hosts/intellij"
+VSCODE_DIR="$ROOT_DIR/hosts/vscode"
 
 # ── 단계 카운터 ──
 CURRENT_STEP=0
@@ -143,6 +144,86 @@ build_core() {
     step_end "Core 번들 완료"
 }
 
+# ── VS Code 호스트로 core/webview 산출물 미러링 ──
+# IntelliJ 빌드가 떨군 packages 산출물을 hosts/vscode/resources 로 복사한다.
+# 이렇게 하면 packages/core 와 packages/webview 빌드 스크립트는 무수정.
+mirror_to_vscode() {
+    local intellij_core="$INTELLIJ_DIR/src/main/resources/core"
+    local intellij_webview="$INTELLIJ_DIR/src/main/resources/webview"
+    local vscode_core="$VSCODE_DIR/resources/core"
+    local vscode_webview="$VSCODE_DIR/resources/webview"
+
+    if [[ -d "$intellij_core" ]]; then
+        rm -rf "$vscode_core"
+        mkdir -p "$vscode_core"
+        cp -R "$intellij_core/." "$vscode_core/"
+        log "  core → $vscode_core"
+    else
+        warn "  IntelliJ core 산출물이 없어 vscode 미러링 스킵 — './build.sh core' 먼저 실행"
+    fi
+
+    if [[ -d "$intellij_webview" ]]; then
+        rm -rf "$vscode_webview"
+        mkdir -p "$vscode_webview"
+        cp -R "$intellij_webview/." "$vscode_webview/"
+        log "  webview → $vscode_webview"
+    else
+        warn "  IntelliJ webview 산출물이 없어 vscode 미러링 스킵 — './build.sh webview' 먼저 실행"
+    fi
+}
+
+# ── VS Code extension host 번들 (esbuild) ──
+build_vscode_extension() {
+    step_increment
+    header "VS Code extension 번들 (esbuild)"
+    step_start
+    log "hosts/vscode/src → hosts/vscode/out/extension.js"
+    (cd "$VSCODE_DIR" && pnpm run build)
+    step_end "extension 번들 완료"
+}
+
+# ── VS Code 전체 빌드 ──
+build_vscode_all() {
+    step_increment
+    header "VS Code 산출물 미러링"
+    step_start
+    mirror_to_vscode
+    step_end "미러링 완료"
+
+    build_vscode_extension
+}
+
+# ── VS Code vsix 패키징 ──
+build_vscode_dist() {
+    step_increment
+    header "VS Code vsix 생성"
+    step_start
+    (cd "$VSCODE_DIR" && pnpm run package)
+    if ls "$VSCODE_DIR"/*.vsix &>/dev/null; then
+        step_end "vsix 생성 완료"
+        log "생성된 파일:"
+        ls -lh "$VSCODE_DIR"/*.vsix | awk '{print "  └ " $9 "  (" $5 ")"}'
+    else
+        err "vsix 파일을 찾을 수 없습니다: $VSCODE_DIR"
+        exit 1
+    fi
+}
+
+# ── VS Code Extension Development Host 실행 ──
+run_vscode() {
+    step_increment
+    header "VS Code Extension Development Host 실행"
+
+    if ! command -v code &>/dev/null; then
+        err "'code' CLI 가 PATH 에 없습니다. VS Code 의 'Shell Command: Install code command' 를 실행하세요."
+        exit 1
+    fi
+
+    log "code --extensionDevelopmentPath=$VSCODE_DIR"
+    log "${DIM}(개발 모드: Vite 와 함께 사용하려면 './build.sh vscode:dev' 사용)${NC}"
+    code --extensionDevelopmentPath="$VSCODE_DIR" --new-window
+}
+
 # ── Webview 빌드 ──
 build_webview() {
     step_increment
@@ -229,6 +310,12 @@ clean() {
     rm -rf "$INTELLIJ_DIR/src/main/resources/core"
     log "hosts/intellij/src/main/resources/webview 삭제"
     rm -rf "$INTELLIJ_DIR/src/main/resources/webview"
+    log "hosts/vscode/out 삭제"
+    rm -rf "$VSCODE_DIR/out"
+    log "hosts/vscode/resources 삭제"
+    rm -rf "$VSCODE_DIR/resources/core" "$VSCODE_DIR/resources/webview"
+    log "hosts/vscode/*.vsix 삭제"
+    rm -f "$VSCODE_DIR"/*.vsix
     step_end "정리 완료"
 }
 
@@ -261,6 +348,11 @@ show_help() {
     echo -e "  ${CYAN}./build.sh webview${NC}      Webview만 빌드"
     echo -e "  ${CYAN}./build.sh dist${NC}         배포용 플러그인 zip 생성"
     echo -e "  ${CYAN}./build.sh logs${NC}         sandbox idea.log 를 tail -f (OMC 플러그인 로그 추적)"
+    echo -e "  ${CYAN}./build.sh vscode${NC}       VS Code 호스트 전체 빌드 (core+webview+extension 번들 미러링)"
+    echo -e "  ${CYAN}./build.sh vscode:dev${NC}   VS Code 개발 모드 (Vite Dev + Core Watch + extension watch + Dev Host)"
+    echo -e "  ${CYAN}./build.sh vscode:build${NC} VS Code extension 만 번들 (core/webview 미러링 + esbuild)"
+    echo -e "  ${CYAN}./build.sh vscode:run${NC}   VS Code Extension Development Host 실행 (이전 빌드 결과 사용)"
+    echo -e "  ${CYAN}./build.sh vscode:dist${NC}  VS Code 배포용 .vsix 생성"
     echo -e "  ${CYAN}./build.sh clean${NC}        빌드 산출물 정리"
     echo -e "  ${CYAN}./build.sh help${NC}         사용법 출력"
     echo ""
@@ -367,6 +459,71 @@ case "$CMD" in
         ;;
     logs)
         tail_logs
+        ;;
+    vscode)
+        TOTAL_STEPS=4
+        CURRENT_STEP=0
+        check_prerequisites
+        install_deps
+        build_core
+        build_webview
+        build_vscode_all
+        print_summary
+        ;;
+    vscode:run)
+        TOTAL_STEPS=1
+        CURRENT_STEP=0
+        run_vscode
+        ;;
+    vscode:build)
+        TOTAL_STEPS=1
+        CURRENT_STEP=0
+        check_prerequisites
+        install_deps
+        build_vscode_all
+        ;;
+    vscode:dev)
+        TOTAL_STEPS=2
+        CURRENT_STEP=0
+        check_prerequisites
+        install_deps
+
+        header "VS Code 개발 모드 (Vite Dev + Core Watch + extension watch)"
+
+        log "1. 초기 Core 빌드 + vscode 미러링..."
+        build_core
+        mirror_to_vscode
+
+        log "2. Vite Dev 서버 고아 프로세스 정리 (포트 5173)..."
+        lsof -ti:5173 | xargs kill -9 2>/dev/null || true
+
+        log "3. Vite Dev 서버 시작..."
+        (cd "$ROOT_DIR/packages/webview" && pnpm run dev) &
+        VITE_PID=$!
+
+        log "4. Core esbuild Watch 시작..."
+        (cd "$ROOT_DIR/packages/core" && SKIP_CORE_NPM_INSTALL=1 node scripts/bundle.mjs --watch) &
+        CORE_PID=$!
+
+        log "5. VS Code extension esbuild Watch 시작..."
+        (cd "$VSCODE_DIR" && pnpm run watch) &
+        EXT_PID=$!
+
+        trap 'kill -TERM "${VITE_PID:-}" "${CORE_PID:-}" "${EXT_PID:-}" 2>/dev/null || true' EXIT INT TERM
+
+        log "6. VS Code Extension Development Host 실행 (OMC_DEV=1)..."
+        OMC_DEV=1 code --extensionDevelopmentPath="$VSCODE_DIR" --new-window
+        ;;
+    vscode:dist)
+        TOTAL_STEPS=5
+        CURRENT_STEP=0
+        check_prerequisites
+        install_deps
+        build_core
+        build_webview
+        build_vscode_all
+        build_vscode_dist
+        print_summary
         ;;
     clean)
         TOTAL_STEPS=1

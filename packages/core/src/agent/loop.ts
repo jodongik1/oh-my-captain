@@ -56,9 +56,30 @@ export interface RunLoopInput {
   attachments?: ProviderImageInput[]
 }
 
+/**
+ * 한 턴이 끝난 뒤 DB 에 그대로 적재될 영속화용 메시지 시퀀스.
+ * 라이브 타임라인 복원에 필요한 메타(thinking, tool_calls, tool_call_id) 를 함께 들고 있다.
+ *
+ * - assistant : LLM 응답 1건 = 한 row (thinking 메타 + tool_calls 포함)
+ * - tool      : 도구 결과 1건 = 한 row (toolCallId/toolName 으로 호출자에 매칭)
+ *
+ * 운영용 messages[] 와는 독립 — 압축/관찰/평가용 system/user 힌트는 영속화 대상이 아니다.
+ */
+export interface PersistedTurnEntry {
+  role: 'assistant' | 'tool'
+  content: string
+  thinking?: string
+  thinkingDurationMs?: number
+  toolCalls?: { id: string; name: string; args: unknown }[]
+  toolCallId?: string
+  toolName?: string
+}
+
 export interface RunLoopResult {
   finalContent: string | null
   conversationTurns: Message[]
+  /** 이번 턴에 발생한 어시스턴트/도구 이벤트의 순서대로 정렬된 영속화 시퀀스. */
+  persistedTurn: PersistedTurnEntry[]
 }
 
 export async function runLoop(input: RunLoopInput): Promise<RunLoopResult> {
@@ -66,6 +87,7 @@ export async function runLoop(input: RunLoopInput): Promise<RunLoopResult> {
   const { userText, host, provider } = input
 
   let finalContent: string | null = null
+  const persistedTurn: PersistedTurnEntry[] = []
 
   try {
     const messages = await assembleInitialMessages(input, userText)
@@ -81,11 +103,6 @@ export async function runLoop(input: RunLoopInput): Promise<RunLoopResult> {
 
     while (iteration++ < LOOP_TUNING.maxIterations) {
       if (signal.aborted) { stopReason = 'aborted'; break }
-
-      // ── 사용자 steering 메시지 주입 ───────────────────────
-      for (const text of input.controller.drainSteering()) {
-        messages.push({ role: 'user', content: `[User Steering] ${text}` })
-      }
 
       // ────────────────────────────────────────────────────
       //  Phase 1: REASON
@@ -104,13 +121,34 @@ export async function runLoop(input: RunLoopInput): Promise<RunLoopResult> {
         finalContent = response.content
       }
 
+      // 영속화 시퀀스에 어시스턴트 응답 1행 적재 (thinking + tool_calls 메타 동봉).
+      const thinkingMeta = response.__thinking
+      const thinkingDur = response.__thinkingDurationMs ?? 0
+      persistedTurn.push({
+        role: 'assistant',
+        content: response.content ?? '',
+        ...(thinkingMeta ? { thinking: thinkingMeta } : {}),
+        ...(thinkingDur > 0 ? { thinkingDurationMs: thinkingDur } : {}),
+        ...(response.tool_calls?.length
+          ? {
+              toolCalls: response.tool_calls.map(tc => ({
+                id: tc.id,
+                name: tc.function.name,
+                args: tc.function.arguments,
+              })),
+            }
+          : {}),
+      })
+
       // 도구 호출이 없으면 자연 종료 (LLM 의 최종 답변)
       if (!response.tool_calls?.length) {
         prevHadTools = false
         break
       }
 
-      messages.push(response)
+      // sidecar 메타는 messages[] 에 누적시키지 않는다 (provider 가 다시 보면 안 됨).
+      const { __thinking: _t, __thinkingDurationMs: _d, ...assistantClean } = response
+      messages.push(assistantClean)
 
       // ────────────────────────────────────────────────────
       //  Phase 2: ACT
@@ -131,6 +169,16 @@ export async function runLoop(input: RunLoopInput): Promise<RunLoopResult> {
         repeatDetector.disabledTools
       )
       prevHadTools = true
+
+      // 도구 결과를 영속화 시퀀스에 적재 — 호출 순서대로, tool_call_id 와 함께.
+      for (const r of dispatchResults) {
+        persistedTurn.push({
+          role: 'tool',
+          content: typeof r.result === 'string' ? r.result : JSON.stringify(r.result),
+          toolCallId: r.call.id,
+          toolName: r.call.function.name,
+        })
+      }
 
       if (signal.aborted) { stopReason = 'aborted'; break }
 
@@ -215,10 +263,10 @@ export async function runLoop(input: RunLoopInput): Promise<RunLoopResult> {
     }
 
     log.debug(`Loop 종료 — reason=${stopReason}, iterations=${iteration - 1}`)
-    return { finalContent, conversationTurns: messages.slice(1) }
+    return { finalContent, conversationTurns: messages.slice(1), persistedTurn }
   } catch (e) {
     host.emit('error', { message: `에이전트 오류: ${(e as Error)?.message}`, retryable: false })
-    return { finalContent, conversationTurns: [] }
+    return { finalContent, conversationTurns: [], persistedTurn }
   }
 }
 
@@ -292,7 +340,11 @@ async function callProvider(
   signal: AbortSignal,
   prevHadTools: boolean,
   iteration: number
-): Promise<{ role: 'assistant'; content: string; tool_calls?: ToolCall[] } | 'aborted' | 'error'> {
+): Promise<
+  | { role: 'assistant'; content: string; tool_calls?: ToolCall[]; __thinking?: string; __thinkingDurationMs?: number }
+  | 'aborted'
+  | 'error'
+> {
   host.emit('thinking_start', { iteration, afterTool: prevHadTools })
   const thinkingStart = Date.now()
   let hasStartedStreaming = false
@@ -352,7 +404,10 @@ async function callProvider(
 
   host.emit('stream_end', {})
   if (signal.aborted) return 'aborted'
-  return response
+  // thinking 메타를 sidecar 필드로 동봉 — 영속화 시 chat.ts 가 사용. 모델 메시지에는 사용하지 않으므로
+  // 호출 직후 분리하여 messages 에 push 할 때 제거한다 (provider 가 다시 보면 안 됨).
+  const thinkingDurationMs = Date.now() - thinkingStart
+  return { ...response, __thinking: thinkingBuffer || undefined, __thinkingDurationMs: thinkingDurationMs }
 }
 
 /**

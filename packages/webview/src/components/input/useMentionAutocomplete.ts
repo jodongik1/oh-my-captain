@@ -13,6 +13,8 @@ export interface MentionAutocomplete {
   handleKey: (e: React.KeyboardEvent, files: string[], onSelect: (file: string) => void) => boolean
   /** 파일 선택 시 호출 — text 갱신은 호출자가 담당 */
   selectMention: (file: string, currentText: string, cursorPos: number) => string
+  /** 폴더 선택 시 호출 — text 를 `@<folderPath>` (trailing slash 포함) 까지 확장하고 그 폴더의 직속 자식 listing 모드로 popup 갱신 */
+  drillIntoFolder: (folderPath: string, currentText: string, cursorPos: number) => string
   /** 외부에서 강제로 닫기 (Escape 등) */
   close: () => void
   /** "+ 컨텍스트 추가" 메뉴 → 텍스트 끝에 @ 삽입 후 자동완성 trigger */
@@ -54,7 +56,10 @@ export function useMentionAutocomplete(textareaRef: RefObject<HTMLTextAreaElemen
       setMentionIndex(prev => Math.min(files.length - 1, prev + 1))
       return true
     }
-    if (e.key === 'Enter' && !(e.nativeEvent as KeyboardEvent).isComposing) {
+    if (
+      (e.key === 'Enter' && !(e.nativeEvent as KeyboardEvent).isComposing) ||
+      (e.key === 'Tab' && !e.shiftKey)
+    ) {
       e.preventDefault()
       if (files[mentionIndex]) onSelect(files[mentionIndex])
       return true
@@ -82,6 +87,34 @@ export function useMentionAutocomplete(textareaRef: RefObject<HTMLTextAreaElemen
     return currentText.slice(0, cursorPos) + `@${file} ` + currentText.slice(cursorPos)
   }, [textareaRef])
 
+  const drillIntoFolder = useCallback((folderPath: string, currentText: string, cursorPos: number): string => {
+    // text 의 마지막 @xxx 를 @folderPath (trailing slash 포함) 로 교체. 공백을 붙이지 않아 atFilter 가 살아있고
+    // detectFromText 정규식 [^\s]* 와 호환되어 popup 이 그대로 listing 모드로 전환된다.
+    const upToCursor = currentText.slice(0, cursorPos)
+    const match = /(?:^|\s)(@([^\s]*))$/.exec(upToCursor)
+    let next: string
+    let newCursor: number
+    if (match) {
+      const replaceStart = match.index + (match[0].startsWith(' ') ? 1 : 0)
+      const replaceEnd = replaceStart + match[1].length
+      next = currentText.slice(0, replaceStart) + `@${folderPath}` + currentText.slice(replaceEnd)
+      newCursor = replaceStart + 1 + folderPath.length
+    } else {
+      next = currentText.slice(0, cursorPos) + `@${folderPath}` + currentText.slice(cursorPos)
+      newCursor = cursorPos + 1 + folderPath.length
+    }
+    setAtFilter({ query: folderPath, index: newCursor - 1 - folderPath.length })
+    setMentionIndex(0)
+    searchFiles(folderPath)
+    requestAnimationFrame(() => {
+      const t = textareaRef.current
+      if (!t) return
+      t.focus()
+      t.setSelectionRange(newCursor, newCursor)
+    })
+    return next
+  }, [searchFiles, textareaRef])
+
   const close = useCallback(() => setAtFilter(null), [])
 
   const insertAtCursor = useCallback((currentText: string, cursorPos: number) => {
@@ -102,5 +135,5 @@ export function useMentionAutocomplete(textareaRef: RefObject<HTMLTextAreaElemen
     return { next, cursor }
   }, [searchFiles, textareaRef])
 
-  return { atFilter, mentionIndex, detectFromText, handleKey, selectMention, close, insertAtCursor }
+  return { atFilter, mentionIndex, detectFromText, handleKey, selectMention, drillIntoFolder, close, insertAtCursor }
 }

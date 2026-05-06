@@ -1,0 +1,79 @@
+{
+  "name": "oh-my-captain-vscode",
+  "displayName": "Oh My Captain",
+  "description": "Local AI coding agent for VS Code",
+  "version": "0.1.0",
+  "private": true,
+  "publisher": "ohmycaptain",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "omcContainer",
+          "title": "Oh My Captain",
+          "icon": "icons/captain.svg"
+        }
+      ]
+    },
+    "views": {
+      "omcContainer": [
+        {
+          "type": "webview",
+          "id": "omcView",
+          "name": "Oh My Captain",
+          "icon": "icons/captain.svg",
+          "contextualTitle": "Oh My Captain"
+        }
+      ]
+    },
+    "commands": [
+      { "command": "omc.explain", "title": "Explain This Code",  "category": "Oh My Captain" },
+      { "command": "omc.review",  "title": "Review This Code",   "category": "Oh My Captain" },
+      { "command": "omc.impact",  "title": "Impact Analysis",    "category": "Oh My Captain" },
+      { "command": "omc.query",   "title": "Query Validation",   "category": "Oh My Captain" },
+      { "command": "omc.improve", "title": "Improve This Code",  "category": "Oh My Captain" },
+      { "command": "omc.test",    "title": "Generate Test",      "category": "Oh My Captain" }
+    ],
+    "submenus": [
+      { "id": "omc.editorContextSubmenu", "label": "Oh My Captain" }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "submenu": "omc.editorContextSubmenu",
+          "group": "1_modification@99",
+          "when": "editorTextFocus"
+        }
+      ],
+      "omc.editorContextSubmenu": [
+        { "command": "omc.explain", "group": "omc@1" },
+        { "command": "omc.review",  "group": "omc@2" },
+        { "command": "omc.impact",  "group": "omc@3" },
+        { "command": "omc.query",   "group": "omc@4" },
+        { "command": "omc.improve", "group": "omc@5" },
+        { "command": "omc.test",    "group": "omc@6" }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "type-check": "tsc --noEmit",
+    "package": "vsce package --no-dependencies --allow-missing-repository --skip-license"
+  },
+  "dependencies": {
+    "@omc/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}

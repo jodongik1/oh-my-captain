@@ -29,7 +29,13 @@ export function registerChatHandlers(state: CoreState) {
     if (!state.sessionId) {
       state.sessionId = sessionId ?? sessionDb.createSession()
     }
-    sessionDb.addMessage(state.sessionId, 'user', text)
+    // 사용자 첨부도 함께 영속화 — 히스토리에서 다시 열 때 이미지 카드 복원에 사용.
+    sessionDb.addMessage(
+      state.sessionId,
+      'user',
+      text,
+      attachments && attachments.length > 0 ? { attachments } : undefined,
+    )
 
     log.debug('2. Set busy flag, starting runLoop')
     await state.run.beginRun(async () => {
@@ -48,7 +54,20 @@ export function registerChatHandlers(state: CoreState) {
         state.history = [...state.history, ...result.conversationTurns]
 
         if (state.sessionId) {
-          sessionDb.addMessage(state.sessionId, 'assistant', result.finalContent || '(도구 실행 완료)')
+          // 이번 턴의 어시스턴트/도구 시퀀스를 그대로 영속화 — 라이브 타임라인 복원의 1차 근거.
+          for (const entry of result.persistedTurn) {
+            sessionDb.addMessage(state.sessionId, entry.role, entry.content, {
+              ...(entry.thinking ? { thinking: entry.thinking } : {}),
+              ...(entry.thinkingDurationMs ? { thinkingDurationMs: entry.thinkingDurationMs } : {}),
+              ...(entry.toolCalls ? { toolCalls: entry.toolCalls } : {}),
+              ...(entry.toolCallId ? { toolCallId: entry.toolCallId } : {}),
+              ...(entry.toolName ? { toolName: entry.toolName } : {}),
+            })
+          }
+          // persistedTurn 이 비어 있으면 (예: 모델이 즉시 에러로 빠진 경우) 최소한 finalContent 라도 남긴다.
+          if (result.persistedTurn.length === 0 && result.finalContent) {
+            sessionDb.addMessage(state.sessionId, 'assistant', result.finalContent)
+          }
           sessionDb.autoTitle(state.sessionId)
         }
         log.debug('3. runLoop completed successfully')

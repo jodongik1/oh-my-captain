@@ -41,6 +41,9 @@ export function buildSlashCommands(h: Hooks): SlashCommand[] {
       action: () => { h.onToggleHistory(); h.closeSlash() } },
     { name: '/settings', label: '설정', category: '사용자 설정',
       action: () => { h.onOpenSettings(); h.closeSlash() } },
+    { name: '/keybindings', label: '키바인딩 편집', category: '사용자 설정',
+      description: '~/.captain/keybindings.json 을 IDE 에서 열기',
+      action: () => { h.closeSlash(); h.bridge.send('keybindings_open', {}) } },
     // ── 프로젝트 부트스트랩 ──
     { name: '/init', label: '프로젝트 분석 & 메모리 초기화', category: '사용자 설정',
       description: 'README/구조/컨벤션을 분석해 .captain/MEMORY.md 에 영구 저장',

@@ -48,7 +48,7 @@ export default function ActivityIndicator({ activity, isBusy, onAbort }: Activit
           {elapsedLabel && <span className="activity-elapsed">{elapsedLabel}</span>}
           {onAbort && (
             <button className="activity-abort" onClick={onAbort} title="중단 (Esc)">
-              esc 로 중단
+              (Esc 키 중단)
             </button>
           )}
         </div>

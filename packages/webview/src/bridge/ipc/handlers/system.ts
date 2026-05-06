@@ -9,6 +9,11 @@ export const createSystemHandlers: IpcHandlerFactory = ({ dispatch, bridge }) =>
   core_ready: () => {
     bridge.send('settings_get', {})
     bridge.send('session_list', {})
+    bridge.send('keybindings_get', {})
+  },
+
+  keybindings_loaded: (payload) => {
+    dispatch({ type: 'SET_KEYBINDINGS', keybindings: payload.keybindings })
   },
 
   settings_loaded: (payload) => {

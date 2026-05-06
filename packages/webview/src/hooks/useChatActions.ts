@@ -56,8 +56,25 @@ export function useChatActions({ state, dispatch }: Args): ChatActions {
   const { sessionId, isBusy, pendingAttachments, timeline, showHistory } = state
 
   const send = useCallback((text: string) => {
+    if (isBusy) return
+    // `!cmd` 는 LLM 으로 가지 않고 로컬 셸에서 직접 실행. 결과는 다음 LLM turn 컨텍스트로 누적.
+    if (text.startsWith('!')) {
+      const command = text.slice(1).trim()
+      if (!command) return
+      // 사용자 입력은 그대로 timeline 에 기록 (`!cmd` 형태). 결과 entry 는 core 가 tool_start/result 로 push.
+      dispatch({
+        type: 'ADD_TIMELINE',
+        entry: {
+          id: Date.now().toString(),
+          type: 'user',
+          content: text,
+          timestamp: Date.now(),
+        },
+      })
+      bridge.send('shell_exec', { command })
+      return
+    }
     const attachments = pendingAttachments
-    // 낙관적 업데이트 — 사용자 메시지를 즉시 timeline 에 추가
     dispatch({
       type: 'ADD_TIMELINE',
       entry: {
@@ -69,12 +86,6 @@ export function useChatActions({ state, dispatch }: Args): ChatActions {
       },
     })
     if (attachments.length > 0) dispatch({ type: 'CLEAR_ATTACHMENTS' })
-
-    if (isBusy) {
-      // 이미 진행 중인 turn 에는 텍스트만 주입 (steering — 첨부 미지원)
-      bridge.send('steer_inject', { text })
-      return
-    }
     dispatch({ type: 'SET_BUSY', busy: true })
     bridge.send('user_message', buildUserMessagePayload(text, sessionId, attachments))
   }, [bridge, dispatch, isBusy, sessionId, pendingAttachments])
@@ -155,7 +166,9 @@ export function useChatActions({ state, dispatch }: Args): ChatActions {
   }, [bridge, dispatch, sessionId])
 
   const titleChange = useCallback((title: string) => {
-    dispatch({ type: 'RENAME_SESSION', sessionId: sessionId ?? '', title })
+    // 로컬 타이틀은 항상 즉시 갱신 — sessionId 가 아직 없는 New Session 에서도 동작해야 함.
+    dispatch({ type: 'SET_SESSION_TITLE', title })
+    // 영속화된 세션이면 호스트에 rename 전파.
     if (sessionId) bridge.send('session_rename', { sessionId, title })
   }, [bridge, dispatch, sessionId])
 

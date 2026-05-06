@@ -2463,15 +2463,6 @@ textarea.input-field:disabled {
   margin-bottom: 8px;
 }
 
-.mention-popup-header {
-  padding: 8px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--fg-muted);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-elevated);
-}
-
 .mention-popup-list {
   overflow-y: auto;
   max-height: 200px;
@@ -2480,7 +2471,8 @@ textarea.input-field:disabled {
 .mention-popup-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 12px;
   padding: 8px 12px;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
@@ -2497,15 +2489,34 @@ textarea.input-field:disabled {
 
 .mention-icon {
   color: var(--fg-secondary);
+  flex-shrink: 0;
 }
 
-.mention-file-path {
+.mention-popup-item-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.mention-file-basename {
   font-size: 12px;
   color: var(--fg-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  direction: rtl; /* 파일명 끝부분이 잘 보이도록 우측 정렬 효과 */
+}
+
+.mention-file-dirname {
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  max-width: 55%;
+  direction: rtl; /* 긴 경로일 때 끝부분(부모 폴더명)이 보이도록 */
   text-align: left;
 }
 

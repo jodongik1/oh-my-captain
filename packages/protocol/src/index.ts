@@ -112,12 +112,37 @@ export interface SessionSummary {
   preview: string
 }
 
-export interface SessionMessage {
+/**
+ * 세션 메시지 영속화 시 함께 저장되는 풍부한 메타데이터.
+ * - thinking / thinkingDurationMs : assistant 응답에 동반된 추론 블록
+ * - toolCalls : assistant 가 호출한 도구 목록 (id/name/args)
+ * - toolCallId / toolName : tool 역할 메시지를 호출자와 매칭
+ * - attachments : user 메시지에 동반된 이미지 첨부
+ *
+ * payload 가 NULL 인 레거시 행은 모든 필드가 undefined — webview 가 단순 user/stream 으로 폴백.
+ */
+export interface SessionMessagePayload {
+  thinking?: string
+  thinkingDurationMs?: number
+  toolCalls?: { id: string; name: string; args: unknown }[]
+  toolCallId?: string
+  toolName?: string
+  attachments?: ImageAttachment[]
+}
+
+export interface SessionMessage extends SessionMessagePayload {
   id: string
   role: 'user' | 'assistant' | 'tool'
   content: string
   timestamp: number
 }
+
+/**
+ * 사용자 정의 키바인딩.
+ * key 는 action 식별자 (예: 'history:previous'), value 는 키 표기 ('ArrowUp', 'Cmd+Enter', 'Shift+Tab').
+ * core 가 ~/.captain/keybindings.json 을 읽어 webview 에 전달, fs.watch 로 변경 감지 시 다시 push.
+ */
+export type KeybindingsConfig = Record<string, string>
 
 // ── IntelliJ → Core ────────────────────────────────────────────
 export type IntellijMessage =
@@ -139,12 +164,13 @@ export type IntellijMessage =
   | { id: string; type: 'model_switch';          payload: { modelId: string } }
   | { id: string; type: 'connection_test';       payload: { baseUrl: string; apiKey?: string } }
   | { id: string; type: 'code_action';           payload: CodeActionPayload }
-  | { id: string; type: 'steer_inject';          payload: { text: string } }
-  | { id: string; type: 'steer_interrupt';       payload: Record<string, never> }
   | { id: string; type: 'file_search';           payload: { query: string } }
   | { id: string; type: 'invoke_ide_action';     payload: { actionId: string } }
   | { id: string; type: 'diagnostics_response';  payload: { diagnostics: Diagnostic[] } }
   | { id: string; type: 'client_log';            payload: { level: string; message: string } }
+  | { id: string; type: 'keybindings_get';       payload: Record<string, never> }
+  | { id: string; type: 'keybindings_open';      payload: Record<string, never> }
+  | { id: string; type: 'shell_exec';            payload: { command: string } }
 
 // ── Core → IntelliJ ────────────────────────────────────────────
 export type CoreMessage =
@@ -178,6 +204,7 @@ export type CoreMessage =
   | { id: string; type: 'model_list_result';      payload: { models: ModelInfo[]; currentModel: string } }
   | { id: string; type: 'model_switched';         payload: { modelId: string; contextWindow: number; capabilities?: string[] } }
   | { id: string; type: 'file_search_result';     payload: { files: string[] } }
+  | { id: string; type: 'keybindings_loaded';     payload: { keybindings: KeybindingsConfig; path: string } }
 
 export interface VerifyResultPayload {
   command: string
